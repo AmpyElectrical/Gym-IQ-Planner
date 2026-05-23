@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String        @id @default(cuid())
+  username    String        @unique
+  createdAt   DateTime      @default(now())
+  profile     Profile?
+  checkIns    CheckIn[]
+  personalBests PersonalBest[]
+  workoutPlans  WorkoutPlan[]
+}
+
+model Profile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  age             String
+  weight          Float
+  experience      String
+  occupation      String
+  physicalDemand  String
+  workHours       String
+  wakeTime        String
+  sleepTime       String
+  gymTime         String
+  injuries        String
+  goals           Json
+  weakPoints      Json
+  updatedAt       DateTime @updatedAt
+}
+
+model CheckIn {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weight    Float
+  energy    Int
+  notes     String
+  date      DateTime
+  createdAt DateTime @default(now())
+}
+
+model Exercise {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  bodyPart    String
+  equipment   String
+  difficulty  String
+  description String
+  isCustom    Boolean  @default(false)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+}
+
+model PersonalBest {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseName String
+  bucketId     String
+  weight       Float
+  reps         Int
+  date         DateTime
+  createdAt    DateTime @default(now())
+}
+
+model WorkoutPlan {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day       String
+  week      String
+  typeId    String
+  exercises Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
