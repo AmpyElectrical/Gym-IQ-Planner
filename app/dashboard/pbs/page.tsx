@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 const BUCKETS = [
   { id: "1",    label: "1 RM",    color: "#FF5F1F" },
@@ -16,9 +16,9 @@ const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard" },
   { id: "plan",    icon: "📋",  label: "Plan",    route: "/dashboard/plan" },
   { id: "pbs",     icon: "🏆",  label: "PBs",     route: "/dashboard/pbs" },
-  { id: "ranks",   icon: "👑",  label: "Ranks",   route: null },
-  { id: "coach",   icon: "🤖",  label: "Coach",   route: null },
-  { id: "profile", icon: "👤",  label: "Profile", route: null },
+  { id: "ranks",   icon: "👑",  label: "Ranks",   route: "/dashboard/ranks"   },
+  { id: "coach",   icon: "🤖",  label: "Coach",   route: "/dashboard/coach"   },
+  { id: "profile", icon: "👤",  label: "Profile", route: "/dashboard/profile" },
 ];
 
 type Exercise = { id: string; name: string; bodyPart: string };
@@ -50,6 +50,7 @@ function getBucketBest(pbs: PB[], bucketId: string): PB | null {
 
 export default function PBsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [pageLoading, setPageLoading] = useState(true);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [grouped, setGrouped] = useState<Grouped>({});
@@ -435,13 +436,13 @@ export default function PBsPage() {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => t.route && router.push(t.route)}
+            onClick={() => router.push(t.route)}
             style={{
-              background: "none", border: "none", cursor: t.route ? "pointer" : "default",
+              background: "none", border: "none", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 6px",
-              color: t.id === "pbs" ? "#FF5F1F" : "#666",
+              color: pathname === t.route ? "#FF5F1F" : "#666",
               fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-              transform: t.id === "pbs" ? "translateY(-2px)" : "none",
+              transform: pathname === t.route ? "translateY(-2px)" : "none",
               transition: "all 0.2s",
             }}
           >

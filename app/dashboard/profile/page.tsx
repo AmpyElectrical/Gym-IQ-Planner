@@ -1,7 +1,8 @@
 "use client";
 
+import React from "react";
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard" },
@@ -46,6 +47,7 @@ const EMPTY: ProfileForm = {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [pageLoading, setPageLoading] = useState(true);
   const [form, setForm] = useState<ProfileForm>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -408,13 +410,13 @@ export default function ProfilePage() {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => t.route && router.push(t.route)}
+            onClick={() => router.push(t.route)}
             style={{
-              background: "none", border: "none", cursor: t.route ? "pointer" : "default",
+              background: "none", border: "none", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 6px",
-              color: t.id === "profile" ? "#FF5F1F" : "#666",
+              color: pathname === t.route ? "#FF5F1F" : "#666",
               fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-              transform: t.id === "profile" ? "translateY(-2px)" : "none",
+              transform: pathname === t.route ? "translateY(-2px)" : "none",
               transition: "all 0.2s",
             }}
           >

@@ -1,7 +1,8 @@
 "use client";
 
+import React from "react";
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard" },
@@ -9,7 +10,7 @@ const TABS = [
   { id: "pbs",     icon: "🏆",  label: "PBs",     route: "/dashboard/pbs" },
   { id: "ranks",   icon: "👑",  label: "Ranks",   route: "/dashboard/ranks" },
   { id: "coach",   icon: "🤖",  label: "Coach",   route: "/dashboard/coach" },
-  { id: "profile", icon: "👤",  label: "Profile", route: null },
+  { id: "profile", icon: "👤",  label: "Profile", route: "/dashboard/profile" },
 ];
 
 const QUICK_PROMPTS = [
@@ -23,6 +24,7 @@ type Message = { role: "user" | "assistant"; content: string };
 
 export default function CoachPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [pageLoading, setPageLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -232,13 +234,13 @@ export default function CoachPage() {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => t.route && router.push(t.route)}
+            onClick={() => router.push(t.route)}
             style={{
-              background: "none", border: "none", cursor: t.route ? "pointer" : "default",
+              background: "none", border: "none", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 6px",
-              color: t.id === "coach" ? "#FF5F1F" : "#666",
+              color: pathname === t.route ? "#FF5F1F" : "#666",
               fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-              transform: t.id === "coach" ? "translateY(-2px)" : "none",
+              transform: pathname === t.route ? "translateY(-2px)" : "none",
               transition: "all 0.2s",
             }}
           >

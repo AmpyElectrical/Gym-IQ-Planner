@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 type User = {
   id: string;
@@ -49,6 +49,7 @@ const SESSION_META: Record<string, { label: string; icon: string; color: string 
 
 export default function Dashboard() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("home");
@@ -298,14 +299,14 @@ export default function Dashboard() {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => t.id === "home" ? setActiveTab("home") : router.push(t.route)}
+            onClick={() => router.push(t.route)}
             style={{
               background: "none", border: "none", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
               padding: "2px 6px",
-              color: t.id === "home" ? "#FF5F1F" : "#666",
+              color: pathname === t.route ? "#FF5F1F" : "#666",
               fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-              transform: t.id === "home" ? "translateY(-2px)" : "none",
+              transform: pathname === t.route ? "translateY(-2px)" : "none",
               transition: "all 0.2s",
             }}
           >

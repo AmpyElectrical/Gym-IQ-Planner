@@ -1,15 +1,16 @@
 "use client";
 
+import React from "react";
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard" },
   { id: "plan",    icon: "📋",  label: "Plan",    route: "/dashboard/plan" },
   { id: "pbs",     icon: "🏆",  label: "PBs",     route: "/dashboard/pbs" },
   { id: "ranks",   icon: "👑",  label: "Ranks",   route: "/dashboard/ranks" },
-  { id: "coach",   icon: "🤖",  label: "Coach",   route: null },
-  { id: "profile", icon: "👤",  label: "Profile", route: null },
+  { id: "coach",   icon: "🤖",  label: "Coach",   route: "/dashboard/coach"   },
+  { id: "profile", icon: "👤",  label: "Profile", route: "/dashboard/profile" },
 ];
 
 const BODY_PARTS = [
@@ -35,6 +36,7 @@ type LeaderboardData = {
 
 export default function RanksPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [pageLoading, setPageLoading] = useState(true);
   const [myId, setMyId] = useState<string>("");
   const [data, setData] = useState<LeaderboardData | null>(null);
@@ -217,13 +219,13 @@ export default function RanksPage() {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => t.route && router.push(t.route)}
+            onClick={() => router.push(t.route)}
             style={{
-              background: "none", border: "none", cursor: t.route ? "pointer" : "default",
+              background: "none", border: "none", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 6px",
-              color: t.id === "ranks" ? "#FF5F1F" : "#666",
+              color: pathname === t.route ? "#FF5F1F" : "#666",
               fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-              transform: t.id === "ranks" ? "translateY(-2px)" : "none",
+              transform: pathname === t.route ? "translateY(-2px)" : "none",
               transition: "all 0.2s",
             }}
           >
