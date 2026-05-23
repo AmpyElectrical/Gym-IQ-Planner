@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -172,8 +173,13 @@ function SessionContent({ day }: { day: string }) {
             <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: "#F5F5F5", lineHeight: 1.1 }}>
               {ex.name}
             </div>
-            <div style={{ fontSize: 11, color: "#555", marginTop: 3, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              {ex.equipment} · {target.sets}×{target.reps}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: meta.color, background: `${meta.color}18`, border: `1px solid ${meta.color}44`, borderRadius: 6, padding: "2px 8px", textTransform: "uppercase" }}>
+                {ex.bodyPart}
+              </span>
+              <span style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                {ex.equipment} · {target.sets}×{target.reps}
+              </span>
             </div>
           </div>
           <button
@@ -304,6 +310,20 @@ function SessionContent({ day }: { day: string }) {
             {group.exercises.map(renderCard)}
           </div>
         ))}
+
+        {/* Done for today */}
+        <button
+          onClick={() => router.push("/dashboard")}
+          style={{
+            width: "100%", padding: "16px 0", borderRadius: 50, border: "none",
+            background: "#161616", color: "#666",
+            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 17, letterSpacing: 1.5,
+            cursor: "pointer", marginTop: 8, marginBottom: 8,
+            border: "1px solid #222",
+          } as React.CSSProperties}
+        >
+          DONE FOR TODAY ›
+        </button>
       </div>
 
       {/* PB Celebration Modal */}
