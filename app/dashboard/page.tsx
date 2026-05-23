@@ -2,11 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { getCurrentWeek } from "@/lib/weekUtils";
 
 type User = {
   id: string;
   username: string;
-  profile: { name: string } | null;
+  createdAt: string;
+  profile: { name: string; programStartDate: string | null } | null;
 };
 
 type WorkoutPlan = {
@@ -30,7 +33,8 @@ const TABS = [
   { id: "pbs",     icon: "🏆",  label: "PBs",     route: "/dashboard/pbs"     },
   { id: "ranks",   icon: "👑",  label: "Ranks",   route: "/dashboard/ranks"   },
   { id: "coach",   icon: "🤖",  label: "Coach",   route: "/dashboard/coach"   },
-  { id: "profile", icon: "👤",  label: "Profile", route: "/dashboard/profile" },
+  { id: "profile",  icon: "👤",  label: "Profile",  route: "/dashboard/profile"  },
+  { id: "settings", icon: "⚙️",  label: "Settings", route: "/dashboard/settings" },
 ];
 
 const SESSION_META: Record<string, { label: string; icon: string; color: string }> = {
@@ -54,6 +58,7 @@ export default function Dashboard() {
   const [pageLoading, setPageLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("home");
   const [todayPlan, setTodayPlan] = useState<WorkoutPlan | null>(null);
+  const [currentWeek, setCurrentWeek] = useState<"1" | "2">("1");
 
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
@@ -70,6 +75,8 @@ export default function Dashboard() {
       .then((data) => {
         if (!data) return;
         setUser(data.user);
+        const startDate = data.user.profile?.programStartDate ?? data.user.createdAt;
+        setCurrentWeek(getCurrentWeek(startDate));
         setPageLoading(false);
       })
       .catch(() => router.replace("/"));
@@ -141,6 +148,9 @@ export default function Dashboard() {
               <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 42, lineHeight: 1, color: "#F5F5F5", margin: 0 }}>
                 {displayName}
               </h1>
+              <p style={{ fontSize: 11, color: "#444", marginTop: 6, letterSpacing: 0.5 }}>
+                {new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).toUpperCase()}
+              </p>
             </div>
 
             {/* Today's Session */}
@@ -148,6 +158,14 @@ export default function Dashboard() {
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", marginBottom: 14, margin: "0 0 14px" }}>
                 TODAY'S SESSION
               </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, letterSpacing: 1.5, color: "#FF5F1F", background: "#FF5F1F18", border: "1px solid #FF5F1F44", borderRadius: 6, padding: "3px 10px" }}>
+                  WEEK {currentWeek}
+                </span>
+                <span style={{ fontSize: 11, color: "#555" }}>
+                  {new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })}
+                </span>
+              </div>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <div style={{
                   width: 54, height: 54, borderRadius: 14, flexShrink: 0,
@@ -161,7 +179,7 @@ export default function Dashboard() {
                     {session ? session.label : "Rest Day"}
                   </div>
                   <div style={{ fontSize: 12, color: "#666", marginTop: 3 }}>
-                    {todayPlan ? `Week ${todayPlan.week} · ${todayPlan.day}` : "No session scheduled"}
+                    {todayPlan ? todayPlan.day : "No session scheduled"}
                   </div>
                 </div>
               </div>
@@ -180,10 +198,10 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Weekly Check-in */}
+            {/* Daily Check-in */}
             <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20 }}>
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 18px" }}>
-                WEEKLY CHECK-IN
+                DAILY CHECK-IN
               </p>
 
               {checkInDone ? (
@@ -235,14 +253,14 @@ export default function Dashboard() {
 
                   <button
                     onClick={handleCheckIn}
-                    disabled={!weight || energy === null || checkInLoading}
+                    disabled={!weight || checkInLoading}
                     style={{
                       width: "100%", padding: "14px 0", borderRadius: 50, border: "none",
-                      background: !weight || energy === null || checkInLoading ? "#333" : "#FF5F1F",
-                      color: !weight || energy === null || checkInLoading ? "#666" : "#fff",
+                      background: !weight || checkInLoading ? "#333" : "#FF5F1F",
+                      color: !weight || checkInLoading ? "#666" : "#fff",
                       fontFamily: "'Barlow Condensed', sans-serif",
                       fontWeight: 900, fontSize: 17, letterSpacing: 1.5,
-                      cursor: !weight || energy === null || checkInLoading ? "not-allowed" : "pointer",
+                      cursor: !weight || checkInLoading ? "not-allowed" : "pointer",
                       transition: "background 0.2s",
                     }}
                   >
@@ -258,19 +276,24 @@ export default function Dashboard() {
                     RECENT
                   </p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {recentCheckIns.slice(0, 3).map((c) => (
-                      <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1E1E1E", borderRadius: 10, padding: "10px 14px" }}>
-                        <span style={{ fontSize: 13, color: "#999" }}>
-                          {new Date(c.date).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
-                        </span>
-                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 16, color: "#F5F5F5" }}>
-                          {c.weight} kg
-                        </span>
-                        <span style={{ fontSize: 12, color: "#FF5F1F", fontWeight: 700 }}>
-                          {"⚡".repeat(c.energy)}
-                        </span>
-                      </div>
-                    ))}
+                    {recentCheckIns.slice(0, 7).map((c) => {
+                      const isToday = new Date(c.date).toDateString() === new Date().toDateString();
+                      return (
+                        <div key={c.id} style={{ background: isToday ? "#FF5F1F18" : "#1E1E1E", border: `1px solid ${isToday ? "#FF5F1F44" : "transparent"}`, borderRadius: 10, padding: "10px 14px" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <span style={{ fontSize: 13, color: isToday ? "#FF5F1F" : "#999", fontWeight: isToday ? 700 : 400 }}>
+                              {isToday ? "✓ TODAY" : new Date(c.date).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                            </span>
+                            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 16, color: "#F5F5F5" }}>
+                              {c.weight} kg
+                            </span>
+                          </div>
+                          {c.notes && (
+                            <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>{c.notes}</div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -297,22 +320,23 @@ export default function Dashboard() {
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
       }}>
         {TABS.map((t) => (
-          <button
+          <Link
             key={t.id}
-            onClick={() => router.push(t.route)}
+            href={t.route}
+            prefetch={true}
             style={{
-              background: "none", border: "none", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
               padding: "2px 6px",
               color: pathname === t.route ? "#FF5F1F" : "#666",
               fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
               transform: pathname === t.route ? "translateY(-2px)" : "none",
               transition: "all 0.2s",
+              textDecoration: "none",
             }}
           >
             <span style={{ fontSize: 20 }}>{t.icon}</span>
             {t.label}
-          </button>
+          </Link>
         ))}
       </nav>
     </div>

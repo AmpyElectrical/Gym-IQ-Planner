@@ -71,7 +71,6 @@ const getBucketBest = (liftData,bid) => {
 
 // ─── EXERCISE DESCRIPTION RENDERER ───────────────────────────────────────────
 function ExerciseDesc({desc}){
-  const [simple, setSimple] = useState(true);
   if(!desc) return null;
 
   const lines = desc.split("\\n").filter(Boolean);
@@ -79,15 +78,13 @@ function ExerciseDesc({desc}){
     const colonIdx = line.indexOf(":");
     const label = line.substring(0, colonIdx).trim();
     const full = line.substring(colonIdx + 1).trim();
-    const parts = full.split(" | ");
-    const simpleText = parts[0].trim();
-    const detailText = parts.length > 1 ? parts[1].trim() : parts[0].trim();
+    const text = full.split(" | ")[0].trim();
     const isTargets = label.includes("🎯");
     const isHow = label.includes("📋");
     const isTip = label.includes("💡");
     const labelColor = isTargets ? "#34D399" : isHow ? T.accent : isTip ? "#FBBF24" : T.text;
     const labelClean = label.replace(/🎯|📋|💡/g,"").trim();
-    return { labelClean, labelColor, simpleText, detailText, isTargets };
+    return { labelClean, labelColor, text, isTargets };
   });
 
   // Split "How to do it" sentences into individual lines for clarity
@@ -110,32 +107,15 @@ function ExerciseDesc({desc}){
 
   return (
     <div style={{background:T.input,borderRadius:12,padding:"16px",marginTop:6,marginBottom:4}}>
-      {/* Simple / Detailed toggle */}
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
-        <div style={{display:"flex",background:T.card,borderRadius:50,padding:3,gap:2}}>
-          <button onClick={()=>setSimple(true)} style={{
-            borderRadius:50,padding:"4px 14px",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
-            background:simple?T.accent:"transparent",color:simple?"#fff":T.muted,transition:"all .2s"
-          }}>Simple</button>
-          <button onClick={()=>setSimple(false)} style={{
-            borderRadius:50,padding:"4px 14px",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
-            background:!simple?T.accent:"transparent",color:!simple?"#fff":T.muted,transition:"all .2s"
-          }}>Detailed</button>
-        </div>
-      </div>
-
-      {/* Sections */}
       {sections.map((s,i) => (
         <div key={i} style={{marginBottom: i < sections.length-1 ? 20 : 0}}>
-          {/* Section heading */}
           <div style={{
             fontSize:10,fontWeight:900,letterSpacing:1.5,
             color:s.labelColor,marginBottom:8,textTransform:"uppercase"
           }}>
             {s.labelClean}
           </div>
-          {/* Section content */}
-          {renderText(simple ? s.simpleText : s.detailText, s.isTargets)}
+          {renderText(s.text, s.isTargets)}
         </div>
       ))}
     </div>

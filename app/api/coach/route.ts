@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 
-const client = new Anthropic();
-
 const e1RM = (w: number, r: number) =>
   r === 1 ? w : Math.round(w * (1 + r / 30) * 10) / 10;
 
 export async function POST(req: NextRequest) {
+  console.log("API KEY:", process.env.ANTHROPIC_API_KEY?.slice(0, 10));
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
   const userId = req.cookies.get("gymiq-user")?.value;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -76,32 +77,27 @@ ${planSummary}
 
 Give advice specific to this person's data. Reference their actual numbers, schedule constraints, and goals when relevant.`;
 
-  const stream = await client.messages.stream({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1000,
-    system: systemPrompt,
-    messages: messages.map((m: { role: string; content: string }) => ({
-      role: m.role,
-      content: m.content,
-    })),
-  });
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: messages.map((m: { role: string; content: string }) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+    });
 
-  const encoder = new TextEncoder();
-  const readable = new ReadableStream({
-    async start(controller) {
-      for await (const chunk of stream) {
-        if (
-          chunk.type === "content_block_delta" &&
-          chunk.delta.type === "text_delta"
-        ) {
-          controller.enqueue(encoder.encode(chunk.delta.text));
-        }
-      }
-      controller.close();
-    },
-  });
-
-  return new NextResponse(readable, {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
+    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    return new NextResponse(text, {
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  } catch (error) {
+    console.error("[coach] Anthropic error message:", (error as Error)?.message);
+    console.error("[coach] Anthropic error full object:", error);
+    return new NextResponse("Sorry, the coach is unavailable right now. Please try again.", {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
 }

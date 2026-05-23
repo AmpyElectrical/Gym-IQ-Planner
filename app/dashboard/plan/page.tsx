@@ -3,6 +3,8 @@
 import React from "react";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { getCurrentWeek } from "@/lib/weekUtils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -44,18 +46,30 @@ const SESSION_TARGETS: Record<string, { sets: number; reps: string }> = {
 const BODY_PART_OPTIONS = ["chest", "back", "shoulders", "arms", "legs", "core", "cardio"];
 const EQUIPMENT_OPTIONS  = ["Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight", "Kettlebell", "Band", "Other"];
 
+const DEFAULT_EXERCISES: Record<string, string[]> = {
+  push:  ["Bench Press", "Overhead Press", "Lateral Raises", "Tricep Pushdown"],
+  pull:  ["Deadlift", "Barbell Row", "Pull-ups", "Barbell Curl"],
+  legs:  ["Squat", "Romanian Deadlift", "Leg Press", "Leg Curl"],
+  upper: ["Bench Press", "Barbell Row", "Overhead Press", "Pull-ups"],
+  lower: ["Squat", "Romanian Deadlift", "Leg Press", "Calf Raises"],
+  arms:  ["Barbell Curl", "Skull Crushers", "Hammer Curl", "Tricep Pushdown"],
+  core:  ["Plank", "Cable Crunch", "Hanging Leg Raise", "Ab Wheel"],
+};
+
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard"         },
   { id: "plan",    icon: "📋",  label: "Plan",    route: "/dashboard/plan"    },
   { id: "pbs",     icon: "🏆",  label: "PBs",     route: "/dashboard/pbs"     },
   { id: "ranks",   icon: "👑",  label: "Ranks",   route: "/dashboard/ranks"   },
   { id: "coach",   icon: "🤖",  label: "Coach",   route: "/dashboard/coach"   },
-  { id: "profile", icon: "👤",  label: "Profile", route: "/dashboard/profile" },
+  { id: "profile",  icon: "👤",  label: "Profile",  route: "/dashboard/profile"  },
+  { id: "settings", icon: "⚙️",  label: "Settings", route: "/dashboard/settings" },
 ];
 
-type PlanEntry   = { id: string; day: string; week: string; typeId: string };
-type Exercise    = { id: string; name: string; bodyPart: string; equipment: string; description: string };
-type BuilderItem = { exId: string; name: string; bodyPart: string; equipment: string; sets: number; reps: string };
+type PlanEntry    = { id: string; day: string; week: string; typeId: string };
+type Exercise     = { id: string; name: string; bodyPart: string; equipment: string; description: string };
+type BuilderItem  = { exId: string; name: string; bodyPart: string; equipment: string; sets: number; reps: string };
+type TrainingPlan = { id: string; name: string; isActive: boolean };
 
 const inputStyle: React.CSSProperties = {
   background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #333",
@@ -74,7 +88,9 @@ export default function PlanPage() {
   const [saving, setSaving]           = useState(false);
   const [detailDay, setDetailDay]     = useState<string | null>(null);
   const [exercises, setExercises]     = useState<Exercise[]>([]);
-  const [expandedEx, setExpandedEx]   = useState<Record<string, boolean>>({});
+  const [expandedEx, setExpandedEx]         = useState<Record<string, boolean>>({});
+  const [expandedBuilder, setExpandedBuilder] = useState<Record<string, boolean>>({});
+  const [expandedPicker, setExpandedPicker]   = useState<Record<string, boolean>>({});
 
   // ── Builder state ──
   const [customizeDay, setCustomizeDay]   = useState<string | null>(null);
@@ -95,26 +111,49 @@ export default function PlanPage() {
   const [savingCustom, setSavingCustom]       = useState(false);
 
   // ── AI generate plan state ──
-  const [generating, setGenerating]   = useState(false);
-  const [aiReasoning, setAiReasoning] = useState("");
+  const [generating, setGenerating]         = useState(false);
+  const [aiReasoning, setAiReasoning]       = useState("");
+  const [showAiInput, setShowAiInput]       = useState(false);
+  const [aiInstructions, setAiInstructions] = useState("");
+
+  // ── Training plans state ──
+  const [trainingPlans, setTrainingPlans]       = useState<TrainingPlan[]>([]);
+  const [activePlanId, setActivePlanId]         = useState<string | null>(null);
+  const [newPlanName, setNewPlanName]           = useState("");
+  const [creatingPlan, setCreatingPlan]         = useState(false);
+  const [showNewPlanInput, setShowNewPlanInput] = useState(false);
+  const [planDataCache, setPlanDataCache]       = useState<Record<string, PlanEntry[]>>({});
+  const [planSwitching, setPlanSwitching]       = useState(false);
+  const [renamingPlanId, setRenamingPlanId]     = useState<string | null>(null);
+  const [renameValue, setRenameValue]           = useState("");
+  const [deletingPlanId, setDeletingPlanId]     = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
       .then((res) => { if (!res.ok) { router.replace("/"); return null; } return res.json(); })
-      .then((data) => { if (!data) return; setPageLoading(false); })
+      .then((data) => { if (!data) return; setWeek(getCurrentWeek(data.user.createdAt)); setPageLoading(false); })
       .catch(() => router.replace("/"));
   }, [router]);
 
   useEffect(() => {
     if (pageLoading) return;
-    fetch("/api/plan")
-      .then((res) => res.json())
-      .then((data) => setPlan(data.plan ?? []))
-      .catch(() => {});
-    fetch("/api/exercises")
-      .then((res) => res.json())
-      .then((data) => setExercises(data.exercises ?? []))
-      .catch(() => {});
+    Promise.all([
+      fetch("/api/plans").then((r) => r.json()),
+      fetch("/api/exercises").then((r) => r.json()),
+    ]).then(async ([plansData, exData]) => {
+      const plans: TrainingPlan[] = plansData.plans ?? [];
+      setTrainingPlans(plans);
+      setExercises(exData.exercises ?? []);
+      if (plans.length === 0) return;
+      const planData = await fetch("/api/plan").then((r) => r.json());
+      const entries: PlanEntry[] = planData.plan ?? [];
+      const activeId: string | null = planData.activePlan?.id ?? null;
+      setPlan(entries);
+      if (activeId) {
+        setActivePlanId(activeId);
+        setPlanDataCache({ [activeId]: entries });
+      }
+    }).catch(() => {});
   }, [pageLoading]);
 
   const getEntry = (day: string) => plan.find((p) => p.day === day && p.week === week) ?? null;
@@ -137,9 +176,11 @@ export default function PlanPage() {
   function openBuilder(day: string) {
     const entry = getEntry(day);
     if (!entry) return;
-    const bodyParts = SESSION_BODY_PARTS[entry.typeId] ?? [];
-    const target    = SESSION_TARGETS[entry.typeId] ?? { sets: 3, reps: "10" };
-    const defaults  = bodyParts.flatMap((bp) => exercises.filter((e) => e.bodyPart === bp));
+    const target       = SESSION_TARGETS[entry.typeId] ?? { sets: 3, reps: "10" };
+    const defaultNames = DEFAULT_EXERCISES[entry.typeId] ?? [];
+    const defaults     = defaultNames
+      .map((name) => exercises.find((e) => e.name === name))
+      .filter((e): e is Exercise => !!e);
     setBuilderItems(defaults.map((ex) => ({ exId: ex.id, name: ex.name, bodyPart: ex.bodyPart, equipment: ex.equipment, sets: target.sets, reps: target.reps })));
     setCustomizeDay(day);
   }
@@ -218,12 +259,65 @@ export default function PlanPage() {
     }
   }
 
+  // ── Training plan management ──
+  async function handleActivatePlan(planId: string) {
+    if (planId === activePlanId) return;
+    setActivePlanId(planId);
+    setTrainingPlans((prev) => prev.map((p) => ({ ...p, isActive: p.id === planId })));
+    if (planDataCache[planId]) {
+      setPlan(planDataCache[planId]);
+      fetch(`/api/plans/${planId}/activate`, { method: "POST" });
+      return;
+    }
+    setPlanSwitching(true);
+    setPlan([]);
+    try {
+      await fetch(`/api/plans/${planId}/activate`, { method: "POST" });
+      const data = await fetch("/api/plan").then((r) => r.json());
+      const entries: PlanEntry[] = data.plan ?? [];
+      setPlan(entries);
+      setPlanDataCache((prev) => ({ ...prev, [planId]: entries }));
+    } finally {
+      setPlanSwitching(false);
+    }
+  }
+
+  async function handleCreatePlan() {
+    if (!newPlanName.trim()) return;
+    setCreatingPlan(true);
+    try {
+      const res  = await fetch("/api/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newPlanName.trim() }) });
+      const data = await res.json();
+      setTrainingPlans((prev) => [...prev, data.plan]);
+      setNewPlanName("");
+      setShowNewPlanInput(false);
+    } finally {
+      setCreatingPlan(false);
+    }
+  }
+
+  async function handleRenamePlan(planId: string) {
+    const name = renameValue.trim();
+    if (!name) { setRenamingPlanId(null); return; }
+    await fetch(`/api/plans/${planId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    setTrainingPlans((prev) => prev.map((p) => p.id === planId ? { ...p, name } : p));
+    setRenamingPlanId(null);
+  }
+
+  async function handleDeletePlan(planId: string) {
+    await fetch(`/api/plans/${planId}`, { method: "DELETE" });
+    setTrainingPlans((prev) => prev.filter((p) => p.id !== planId));
+    setPlanDataCache((prev) => { const next = { ...prev }; delete next[planId]; return next; });
+    if (activePlanId === planId) { setActivePlanId(null); setPlan([]); }
+    setDeletingPlanId(null);
+  }
+
   // ── AI plan generation ──
   async function handleAiGenerate() {
     setGenerating(true);
     setAiReasoning("");
     try {
-      const res  = await fetch("/api/plan/generate", { method: "POST" });
+      const res  = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ additionalInstructions: aiInstructions.trim() }) });
       const data = await res.json();
       if (data.plan) {
         setPlan(data.plan);
@@ -231,6 +325,7 @@ export default function PlanPage() {
       }
     } finally {
       setGenerating(false);
+      setShowAiInput(false);
     }
   }
 
@@ -239,6 +334,25 @@ export default function PlanPage() {
       <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         <div style={{ width: 32, height: 32, border: "3px solid #222", borderTopColor: "#FF5F1F", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+      </div>
+    );
+  }
+
+  function renderDescription(description: string) {
+    const tMatch = description?.match(/🎯 Targets:\s*(.+?)(?=\n|$)/);
+    const hMatch = description?.match(/📋 How to do it:\s*([\s\S]+?)(?=\n💡|$)/);
+    const kMatch = description?.match(/💡 Key tip:\s*(.+?)(?=\n|$)/);
+    const targets = tMatch?.[1]?.trim();
+    const howTo   = hMatch?.[1]?.trim();
+    const tip     = kMatch?.[1]?.trim();
+    if (!targets && !howTo && !tip) {
+      return <div style={{ fontSize: 13, color: "#ccc", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{description || "No description available yet."}</div>;
+    }
+    return (
+      <div style={{ fontSize: 13, color: "#ccc", lineHeight: 1.7 }}>
+        {targets && <div style={{ marginBottom: 10 }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "#FF5F1F", textTransform: "uppercase", marginBottom: 4 }}>TARGETS</div><div>{targets}</div></div>}
+        {howTo && <div style={{ marginBottom: 10 }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "#FF5F1F", textTransform: "uppercase", marginBottom: 4 }}>HOW TO DO IT</div><div style={{ whiteSpace: "pre-wrap" }}>{howTo}</div></div>}
+        {tip && <div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "#FF5F1F", textTransform: "uppercase", marginBottom: 4 }}>KEY TIP</div><div>{tip}</div></div>}
       </div>
     );
   }
@@ -255,133 +369,274 @@ export default function PlanPage() {
   const builderSt    = builderEntry ? getType(builderEntry.typeId) : null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#000", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", paddingBottom: 80 }}>
+    <div style={{ height: "100vh", background: "#000", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", display: "flex", flexDirection: "column" }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
-      <div style={{ maxWidth: 480, margin: "0 auto", padding: "28px 20px" }}>
+      {/* Header */}
+      <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #111", flexShrink: 0 }}>
+        <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 2px" }}>YOUR</p>
+        <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 36, lineHeight: 1, margin: 0 }}>TRAINING PLAN</h1>
+      </div>
 
-        {/* Header */}
-        <div style={{ marginBottom: 24 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>YOUR</p>
-          <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 42, lineHeight: 1, margin: 0 }}>TRAINING PLAN</h1>
-        </div>
+      {/* Body: sidebar + content */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
-        {/* ── AI GENERATE CARD ── */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, marginBottom: 20 }}>
-          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 12px" }}>
-            AI PLAN BUILDER
-          </p>
-          <p style={{ fontSize: 13, color: "#666", marginBottom: 14, lineHeight: 1.5 }}>
-            Generates a personalised 2-week rotating plan based on your profile, goals, and lifestyle.
-          </p>
-          <button
-            onClick={handleAiGenerate}
-            disabled={generating}
-            style={{
-              width: "100%", padding: "13px 0", borderRadius: 50, border: "none",
-              background: generating ? "#333" : "#FF5F1F",
-              color: generating ? "#666" : "#fff",
-              fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 16, letterSpacing: 1.5,
-              cursor: generating ? "not-allowed" : "pointer", transition: "background 0.2s",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            }}
-          >
-            {generating ? (
-              <>
-                <div style={{ width: 16, height: 16, border: "2px solid #555", borderTopColor: "#999", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                GENERATING...
-              </>
-            ) : "⚡ GENERATE MY PLAN WITH AI"}
-          </button>
-          {aiReasoning && (
-            <p style={{ fontSize: 12, color: "#555", marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>
-              {aiReasoning}
-            </p>
-          )}
-        </div>
-
-        {/* Week toggle */}
-        <div style={{ display: "flex", background: "#161616", borderRadius: 50, padding: 4, marginBottom: 24, border: "1px solid #222" }}>
-          {(["1", "2"] as const).map((w) => (
-            <button
-              key={w}
-              onClick={() => setWeek(w)}
-              style={{
-                flex: 1, padding: "10px 0", borderRadius: 50, border: "none",
-                background: week === w ? "#FF5F1F" : "transparent",
-                color: week === w ? "#fff" : "#666",
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontWeight: 900, fontSize: 16, letterSpacing: 1, cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-            >
-              WEEK {w}
-            </button>
-          ))}
-        </div>
-
-        {/* Day cards */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {DAYS.map((day) => {
-            const entry = getEntry(day);
-            const st    = entry ? getType(entry.typeId) : null;
+        {/* ── LEFT SIDEBAR ── */}
+        <div style={{ width: 64, borderRight: "1px solid #111", display: "flex", flexDirection: "column", background: "#050505", flexShrink: 0, overflowY: "auto" }}>
+          {trainingPlans.map((tp) => {
+            const isActive = tp.id === activePlanId;
             return (
               <div
-                key={day}
-                style={{ background: "#161616", border: "1px solid #222", borderRadius: 14, overflow: "hidden", transition: "border-color 0.2s" }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#444")}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#222")}
+                key={tp.id}
+                style={{ flexShrink: 0, borderLeft: `3px solid ${isActive ? "#FF5F1F" : "transparent"}`, borderBottom: "1px solid #111", background: isActive ? "#FF5F1F10" : "transparent", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", minHeight: 96, padding: "12px 6px" }}
+                onClick={() => handleActivatePlan(tp.id)}
               >
-                {/* Main row */}
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <button
-                    onClick={() => setSelectedDay(day)}
-                    style={{ flex: 1, display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", cursor: "pointer", textAlign: "left", background: "transparent", border: "none" }}
-                  >
-                    <div style={{ width: 40, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 16, color: "#555", flexShrink: 0 }}>{day}</div>
-                    <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, background: st ? `${st.color}22` : "#1E1E1E", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
-                      {st ? st.icon : ""}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      {st ? (
-                        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 20, color: "#F5F5F5" }}>{st.label.toUpperCase()}</div>
-                      ) : (
-                        <div style={{ fontSize: 14, color: "#444", fontStyle: "italic" }}>Tap to assign</div>
-                      )}
-                    </div>
-                    {!st && <div style={{ fontSize: 20, color: "#333" }}>+</div>}
-                  </button>
-
-                  {st && (
-                    <button
-                      onClick={() => setDetailDay(day)}
-                      style={{ padding: "0 18px", alignSelf: "stretch", flexShrink: 0, background: `${st.color}18`, border: "none", borderLeft: "1px solid #2a2a2a", color: st.color, fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.15s" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = `${st.color}30`)}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = `${st.color}18`)}
-                      title="View exercises"
-                    >
-                      ›
-                    </button>
-                  )}
+                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", width: "100%", padding: "0 6px" }}>
+                  <span style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 11, letterSpacing: 0.5, color: isActive ? "#FF5F1F" : "#555", overflow: "hidden", whiteSpace: "nowrap", maxHeight: 64, textTransform: "uppercase", display: "block" }}>
+                    {tp.name}
+                  </span>
                 </div>
-
-                {/* Customise row */}
-                {st && entry && !["rest", "stretch"].includes(entry.typeId) && (
-                  <button
-                    onClick={() => openBuilder(day)}
-                    style={{ width: "100%", padding: "9px 18px", background: "transparent", border: "none", borderTop: "1px solid #1a1a1a", color: "#555", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 12, letterSpacing: 1.5, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 6, transition: "color 0.15s" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = "#FF5F1F")}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = "#555")}
-                  >
-                    ✎ CUSTOMISE SESSION
-                  </button>
-                )}
               </div>
             );
           })}
+          {/* + New Plan */}
+          <button
+            onClick={() => { setShowNewPlanInput(true); setDeletingPlanId(null); }}
+            style={{ width: "100%", padding: "14px 0", background: "transparent", border: "none", borderBottom: "1px solid #111", color: "#333", fontSize: 22, cursor: "pointer", flexShrink: 0, transition: "color 0.15s" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#FF5F1F")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#333")}
+          >
+            +
+          </button>
+        </div>
+
+        {/* ── MAIN CONTENT ── */}
+        <div style={{ flex: 1, overflowY: "auto", paddingBottom: 80 }}>
+          {planSwitching && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 0" }}>
+              <div style={{ width: 16, height: 16, border: "2px solid #222", borderTopColor: "#FF5F1F", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+            </div>
+          )}
+
+          {/* Plan action bar */}
+          {activePlanId && (
+            <div style={{ padding: "14px 14px 0" }}>
+              <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 14, padding: "12px 14px" }}>
+                {renamingPlanId === activePlanId ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleRenamePlan(renamingPlanId); if (e.key === "Escape") setRenamingPlanId(null); }}
+                      style={{ flex: 1, background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #FF5F1F", borderRadius: 10, padding: "0 14px", fontSize: 15, fontFamily: "'Barlow', sans-serif", outline: "none", minHeight: 44 }}
+                    />
+                    <button
+                      onClick={() => handleRenamePlan(renamingPlanId)}
+                      style={{ minHeight: 44, minWidth: 44, borderRadius: 10, border: "none", background: "#FF5F1F", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 20, cursor: "pointer", flexShrink: 0 }}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      onClick={() => setRenamingPlanId(null)}
+                      style={{ minHeight: 44, minWidth: 44, borderRadius: 10, border: "1px solid #333", background: "transparent", color: "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, cursor: "pointer", flexShrink: 0 }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : deletingPlanId === activePlanId ? (
+                  <div>
+                    <p style={{ fontSize: 13, color: "#ccc", margin: "0 0 12px", lineHeight: 1.4 }}>
+                      Delete <strong style={{ color: "#F5F5F5" }}>{trainingPlans.find((p) => p.id === activePlanId)?.name}</strong>? This cannot be undone.
+                    </p>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => handleDeletePlan(deletingPlanId)}
+                        style={{ flex: 1, minHeight: 44, borderRadius: 50, border: "none", background: "#EF4444", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 16, letterSpacing: 1, cursor: "pointer" }}
+                      >
+                        DELETE
+                      </button>
+                      <button
+                        onClick={() => setDeletingPlanId(null)}
+                        style={{ flex: 1, minHeight: 44, borderRadius: 50, border: "1px solid #333", background: "transparent", color: "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 16, letterSpacing: 1, cursor: "pointer" }}
+                      >
+                        CANCEL
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => { const p = trainingPlans.find((p) => p.id === activePlanId); if (p) { setRenameValue(p.name); setRenamingPlanId(activePlanId); } }}
+                      style={{ flex: 1, minHeight: 44, borderRadius: 50, border: "1px solid #333", background: "transparent", color: "#F5F5F5", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1, cursor: "pointer" }}
+                    >
+                      RENAME
+                    </button>
+                    <button
+                      onClick={() => setDeletingPlanId(activePlanId)}
+                      style={{ flex: 1, minHeight: 44, borderRadius: 50, border: "1px solid #EF444455", background: "transparent", color: "#EF4444", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1, cursor: "pointer" }}
+                    >
+                      DELETE
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* AI GENERATE CARD */}
+          <div style={{ padding: "14px 14px 0" }}>
+            <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 18, marginBottom: 14 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 10px" }}>AI PLAN BUILDER</p>
+              <p style={{ fontSize: 13, color: "#666", marginBottom: 12, lineHeight: 1.5 }}>Generates a personalised 2-week rotating plan based on your profile, goals, and lifestyle.</p>
+              {generating ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", color: "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1.5 }}>
+                  <div style={{ width: 14, height: 14, border: "2px solid #555", borderTopColor: "#999", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  GENERATING...
+                </div>
+              ) : showAiInput ? (
+                <>
+                  <textarea
+                    autoFocus
+                    value={aiInstructions}
+                    onChange={(e) => setAiInstructions(e.target.value)}
+                    placeholder="Tell the AI what you want — e.g. focus on legs, train 5 days, more upper body volume..."
+                    rows={3}
+                    style={{ width: "100%", background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #FF5F1F", borderRadius: 10, padding: "10px 14px", fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: "none", resize: "none", marginBottom: 10, boxSizing: "border-box" }}
+                  />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={handleAiGenerate}
+                      style={{ flex: 1, minHeight: 44, borderRadius: 50, border: "none", background: "#FF5F1F", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, cursor: "pointer" }}
+                    >
+                      ⚡ GENERATE
+                    </button>
+                    <button
+                      onClick={() => { setShowAiInput(false); setAiInstructions(""); }}
+                      style={{ minHeight: 44, padding: "0 16px", borderRadius: 50, border: "1px solid #333", background: "transparent", color: "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, cursor: "pointer" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={() => setShowAiInput(true)}
+                  style={{ width: "100%", padding: "12px 0", borderRadius: 50, border: "none", background: "#FF5F1F", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, cursor: "pointer", transition: "background 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                >
+                  ⚡ GENERATE MY PLAN WITH AI
+                </button>
+              )}
+              {aiReasoning && <p style={{ fontSize: 12, color: "#555", marginTop: 10, lineHeight: 1.5, fontStyle: "italic" }}>{aiReasoning}</p>}
+            </div>
+          </div>
+
+          {/* Week toggle */}
+          <div style={{ padding: "0 14px 14px" }}>
+            <div style={{ display: "flex", background: "#161616", borderRadius: 50, padding: 4, border: "1px solid #222" }}>
+              {(["1", "2"] as const).map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setWeek(w)}
+                  style={{ flex: 1, minHeight: 44, padding: "11px 0", borderRadius: 50, border: "none", background: week === w ? "#FF5F1F" : "transparent", color: week === w ? "#fff" : "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1, cursor: "pointer", transition: "all 0.2s" }}
+                >
+                  WEEK {w}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Day cards */}
+          <div style={{ padding: "0 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+            {DAYS.map((day) => {
+              const entry = getEntry(day);
+              const st    = entry ? getType(entry.typeId) : null;
+              return (
+                <div
+                  key={day}
+                  style={{ background: "#161616", border: "1px solid #222", borderRadius: 14, overflow: "hidden", transition: "border-color 0.2s" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#444")}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#222")}
+                >
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <button
+                      onClick={() => setSelectedDay(day)}
+                      style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "12px 12px", cursor: "pointer", textAlign: "left", background: "transparent", border: "none" }}
+                    >
+                      <div style={{ width: 34, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, color: "#555", flexShrink: 0 }}>{day}</div>
+                      <div style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: st ? `${st.color}22` : "#1E1E1E", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                        {st ? st.icon : ""}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {st ? (
+                          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 17, color: "#F5F5F5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.label.toUpperCase()}</div>
+                        ) : (
+                          <div style={{ fontSize: 13, color: "#444", fontStyle: "italic" }}>Tap to assign</div>
+                        )}
+                      </div>
+                      {!st && <div style={{ fontSize: 18, color: "#333" }}>+</div>}
+                    </button>
+                    {st && (
+                      <button
+                        onClick={() => setDetailDay(day)}
+                        style={{ padding: "0 14px", alignSelf: "stretch", flexShrink: 0, background: `${st.color}18`, border: "none", borderLeft: "1px solid #2a2a2a", color: st.color, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.15s" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = `${st.color}30`)}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = `${st.color}18`)}
+                        title="View exercises"
+                      >
+                        ›
+                      </button>
+                    )}
+                  </div>
+                  {st && entry && !["rest", "stretch"].includes(entry.typeId) && (
+                    <button
+                      onClick={() => openBuilder(day)}
+                      style={{ width: "100%", minHeight: 44, padding: "0 12px", background: "transparent", border: "none", borderTop: "1px solid #1a1a1a", color: "#555", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 11, letterSpacing: 1.5, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 5, transition: "color 0.15s" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = "#FF5F1F")}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = "#555")}
+                    >
+                      ✎ CUSTOMISE SESSION
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
+
+      {/* New plan input panel */}
+      {showNewPlanInput && (
+        <>
+          <div onClick={() => { setShowNewPlanInput(false); setNewPlanName(""); }} style={{ position: "fixed", inset: 0, zIndex: 199 }} />
+          <div style={{ position: "fixed", bottom: 60, left: 0, right: 0, zIndex: 200, background: "#111", borderTop: "1px solid #222", padding: "12px 14px" }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                autoFocus
+                value={newPlanName}
+                onChange={(e) => setNewPlanName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreatePlan(); if (e.key === "Escape") { setShowNewPlanInput(false); setNewPlanName(""); } }}
+                placeholder="Plan name…"
+                style={{ flex: 1, background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #FF5F1F", borderRadius: 10, padding: "9px 14px", fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: "none" }}
+              />
+              <button
+                onClick={handleCreatePlan}
+                disabled={!newPlanName.trim() || creatingPlan}
+                style={{ padding: "9px 16px", borderRadius: 50, border: "none", background: !newPlanName.trim() || creatingPlan ? "#333" : "#FF5F1F", color: !newPlanName.trim() || creatingPlan ? "#555" : "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, cursor: !newPlanName.trim() || creatingPlan ? "not-allowed" : "pointer" }}
+              >
+                {creatingPlan ? "..." : "CREATE"}
+              </button>
+              <button
+                onClick={() => { setShowNewPlanInput(false); setNewPlanName(""); }}
+                style={{ padding: "9px 14px", borderRadius: 50, border: "1px solid #333", background: "transparent", color: "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── SESSION DETAIL OVERLAY ── */}
       {detailDay && detailSt && (
@@ -429,11 +684,13 @@ export default function PlanPage() {
                           </div>
                           <button
                             onClick={() => setExpandedEx((prev) => ({ ...prev, [ex.id]: !prev[ex.id] }))}
-                            style={{ background: isExpanded ? "#FF5F1F22" : "#1E1E1E", border: `1px solid ${isExpanded ? "#FF5F1F55" : "#2a2a2a"}`, borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: isExpanded ? "#FF5F1F" : "#555", fontSize: 14, flexShrink: 0, marginLeft: 10 }}
+                            style={{ background: isExpanded ? "#FF5F1F22" : "#1E1E1E", border: `1px solid ${isExpanded ? "#FF5F1F55" : "#2a2a2a"}`, borderRadius: 8, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: isExpanded ? "#FF5F1F" : "#555", fontSize: 14, flexShrink: 0, marginLeft: 10 }}
                           >ℹ</button>
                         </div>
                         {isExpanded && (
-                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #2a2a2a", fontSize: 13, color: "#ccc", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{ex.description}</div>
+                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #2a2a2a" }}>
+                            {renderDescription(ex.description)}
+                          </div>
                         )}
                       </div>
                     );
@@ -485,6 +742,7 @@ export default function PlanPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: 8 }}>
                       <button onClick={() => moveItem(idx, -1)} disabled={idx === 0} style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #2a2a2a", background: "#1E1E1E", color: idx === 0 ? "#333" : "#999", fontSize: 13, cursor: idx === 0 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>↑</button>
                       <button onClick={() => moveItem(idx, 1)} disabled={idx === builderItems.length - 1} style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #2a2a2a", background: "#1E1E1E", color: idx === builderItems.length - 1 ? "#333" : "#999", fontSize: 13, cursor: idx === builderItems.length - 1 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>↓</button>
+                      <button onClick={() => setExpandedBuilder((prev) => ({ ...prev, [item.exId]: !prev[item.exId] }))} style={{ width: 44, height: 44, borderRadius: 7, border: "1px solid #2a2a2a", background: expandedBuilder[item.exId] ? "#FF5F1F22" : "#1E1E1E", color: expandedBuilder[item.exId] ? "#FF5F1F" : "#555", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>ℹ</button>
                       <button onClick={() => removeBuilderItem(idx)} style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #2a2a2a", background: "#1E1E1E", color: "#EF4444", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
                     </div>
                   </div>
@@ -499,6 +757,11 @@ export default function PlanPage() {
                       <input type="text" placeholder="e.g. 8-12" value={item.reps} onChange={(e) => updateBuilderItem(idx, "reps", e.target.value)} style={inputStyle} onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")} onBlur={(e) => (e.target.style.borderColor = "#333")} />
                     </div>
                   </div>
+                  {expandedBuilder[item.exId] && (
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #2a2a2a" }}>
+                      {renderDescription(exercises.find((e) => e.id === item.exId)?.description ?? "")}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -569,7 +832,7 @@ export default function PlanPage() {
                 <button
                   onClick={handleGenerateDesc}
                   disabled={!customName || !customBodyPart || !customEquipment || generatingDesc}
-                  style={{ flex: 1, padding: "10px 0", borderRadius: 50, border: "none", background: !customName || !customBodyPart || !customEquipment || generatingDesc ? "#2a2a2a" : "#1E1E1E", color: !customName || !customBodyPart || !customEquipment || generatingDesc ? "#555" : "#FF5F1F", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: 1, cursor: !customName || !customBodyPart || !customEquipment || generatingDesc ? "not-allowed" : "pointer", border: "1px solid #333" } as React.CSSProperties}
+                  style={{ flex: 1, padding: "10px 0", borderRadius: 50, background: !customName || !customBodyPart || !customEquipment || generatingDesc ? "#2a2a2a" : "#1E1E1E", color: !customName || !customBodyPart || !customEquipment || generatingDesc ? "#555" : "#FF5F1F", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: 1, cursor: !customName || !customBodyPart || !customEquipment || generatingDesc ? "not-allowed" : "pointer", border: "1px solid #333" }}
                 >
                   {generatingDesc ? "GENERATING..." : "⚡ AI GENERATE DESC"}
                 </button>
@@ -605,21 +868,34 @@ export default function PlanPage() {
               {filteredExercises.map((ex) => {
                 const alreadyAdded = builderItems.some((b) => b.exId === ex.id);
                 return (
-                  <div key={ex.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#161616", border: `1px solid ${alreadyAdded ? "#FF5F1F33" : "#222"}`, borderRadius: 12, padding: "12px 14px" }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 17, color: "#F5F5F5", lineHeight: 1 }}>{ex.name}</div>
-                      <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#FF5F1F", background: "#FF5F1F18", border: "1px solid #FF5F1F44", borderRadius: 6, padding: "2px 7px", textTransform: "uppercase" }}>{ex.bodyPart}</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#555", background: "#1E1E1E", border: "1px solid #2a2a2a", borderRadius: 6, padding: "2px 7px" }}>{ex.equipment}</span>
+                  <div key={ex.id} style={{ background: "#161616", border: `1px solid ${alreadyAdded ? "#FF5F1F33" : "#222"}`, borderRadius: 12, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 17, color: "#F5F5F5", lineHeight: 1 }}>{ex.name}</div>
+                        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#FF5F1F", background: "#FF5F1F18", border: "1px solid #FF5F1F44", borderRadius: 6, padding: "2px 7px", textTransform: "uppercase" }}>{ex.bodyPart}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#555", background: "#1E1E1E", border: "1px solid #2a2a2a", borderRadius: 6, padding: "2px 7px" }}>{ex.equipment}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 12 }}>
+                        <button
+                          onClick={() => setExpandedPicker((prev) => ({ ...prev, [ex.id]: !prev[ex.id] }))}
+                          style={{ width: 44, height: 44, borderRadius: 8, border: "1px solid #2a2a2a", background: expandedPicker[ex.id] ? "#FF5F1F22" : "#1E1E1E", color: expandedPicker[ex.id] ? "#FF5F1F" : "#555", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >ℹ</button>
+                        <button
+                          onClick={() => { addExerciseToBuilder(ex); setShowExPicker(false); }}
+                          disabled={alreadyAdded}
+                          style={{ width: 44, height: 44, borderRadius: 8, border: "none", background: alreadyAdded ? "#2a2a2a" : "#FF5F1F", color: alreadyAdded ? "#555" : "#fff", fontSize: 18, cursor: alreadyAdded ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >
+                          {alreadyAdded ? "✓" : "+"}
+                        </button>
                       </div>
                     </div>
-                    <button
-                      onClick={() => { addExerciseToBuilder(ex); setShowExPicker(false); }}
-                      disabled={alreadyAdded}
-                      style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: alreadyAdded ? "#2a2a2a" : "#FF5F1F", color: alreadyAdded ? "#555" : "#fff", fontSize: 18, cursor: alreadyAdded ? "default" : "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", marginLeft: 12 }}
-                    >
-                      {alreadyAdded ? "✓" : "+"}
-                    </button>
+                    {expandedPicker[ex.id] && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #2a2a2a" }}>
+                        {renderDescription(ex.description)}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -668,14 +944,15 @@ export default function PlanPage() {
       {/* Bottom Nav */}
       <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 99, background: "#0A0A0A", borderTop: "1px solid #222", display: "flex", justifyContent: "space-around", padding: "8px 0 max(8px, env(safe-area-inset-bottom))" }}>
         {TABS.map((t) => (
-          <button
+          <Link
             key={t.id}
-            onClick={() => router.push(t.route)}
-            style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 6px", color: pathname === t.route ? "#FF5F1F" : "#666", fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5, transform: pathname === t.route ? "translateY(-2px)" : "none", transition: "all 0.2s" }}
+            href={t.route}
+            prefetch={true}
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 6px", color: pathname === t.route ? "#FF5F1F" : "#666", fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5, transform: pathname === t.route ? "translateY(-2px)" : "none", transition: "all 0.2s", textDecoration: "none" }}
           >
             <span style={{ fontSize: 20 }}>{t.icon}</span>
             {t.label}
-          </button>
+          </Link>
         ))}
       </nav>
     </div>

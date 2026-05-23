@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const checkIns = await prisma.checkIn.findMany({
     where: { userId },
     orderBy: { date: "desc" },
-    take: 10,
+    take: 7,
   });
 
   return NextResponse.json({ checkIns });

@@ -74,7 +74,8 @@ const TABS = [
   { id: "pbs",     icon: "🏆",  label: "PBs",     route: "/dashboard/pbs"     },
   { id: "ranks",   icon: "👑",  label: "Ranks",   route: "/dashboard/ranks"   },
   { id: "coach",   icon: "🤖",  label: "Coach",   route: "/dashboard/coach"   },
-  { id: "profile", icon: "👤",  label: "Profile", route: "/dashboard/profile" },
+  { id: "profile",  icon: "👤",  label: "Profile",  route: "/dashboard/profile"  },
+  { id: "settings", icon: "⚙️",  label: "Settings", route: "/dashboard/settings" },
 ];
 
 const e1RM = (w: number, r: number) => (r === 1 ? w : Math.round(w * (1 + r / 30) * 10) / 10);
@@ -157,6 +158,25 @@ function SessionContent({ day }: { day: string }) {
     );
   }
 
+  function renderDescription(description: string) {
+    const tMatch = description?.match(/🎯 Targets:\s*(.+?)(?=\n|$)/);
+    const hMatch = description?.match(/📋 How to do it:\s*([\s\S]+?)(?=\n💡|$)/);
+    const kMatch = description?.match(/💡 Key tip:\s*(.+?)(?=\n|$)/);
+    const targets = tMatch?.[1]?.trim();
+    const howTo   = hMatch?.[1]?.trim();
+    const tip     = kMatch?.[1]?.trim();
+    if (!targets && !howTo && !tip) {
+      return <div style={{ fontSize: 13, color: "#ccc", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{description || "No description available yet."}</div>;
+    }
+    return (
+      <div style={{ fontSize: 13, color: "#ccc", lineHeight: 1.7 }}>
+        {targets && <div style={{ marginBottom: 10 }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "#FF5F1F", textTransform: "uppercase", marginBottom: 4 }}>TARGETS</div><div>{targets}</div></div>}
+        {howTo && <div style={{ marginBottom: 10 }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "#FF5F1F", textTransform: "uppercase", marginBottom: 4 }}>HOW TO DO IT</div><div style={{ whiteSpace: "pre-wrap" }}>{howTo}</div></div>}
+        {tip && <div><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "#FF5F1F", textTransform: "uppercase", marginBottom: 4 }}>KEY TIP</div><div>{tip}</div></div>}
+      </div>
+    );
+  }
+
   const renderCard = (ex: Exercise) => {
     const inp = inputs[ex.id] ?? { weight: "", reps: "" };
     const result = logResults[ex.id];
@@ -184,7 +204,7 @@ function SessionContent({ day }: { day: string }) {
           </div>
           <button
             onClick={() => setExpanded((prev) => ({ ...prev, [ex.id]: !prev[ex.id] }))}
-            style={{ background: "#1E1E1E", border: "1px solid #2a2a2a", borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: isExpanded ? "#FF5F1F" : "#555", fontSize: 14, flexShrink: 0, marginLeft: 10 }}
+            style={{ background: "#1E1E1E", border: "1px solid #2a2a2a", borderRadius: 8, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: isExpanded ? "#FF5F1F" : "#555", fontSize: 14, flexShrink: 0, marginLeft: 10 }}
           >
             ℹ
           </button>
@@ -246,9 +266,7 @@ function SessionContent({ day }: { day: string }) {
         {/* Expandable description */}
         {isExpanded && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #2a2a2a" }}>
-            <div style={{ fontSize: 13, color: "#ccc", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-              {ex.description}
-            </div>
+            {renderDescription(ex.description)}
           </div>
         )}
       </div>
@@ -315,7 +333,7 @@ function SessionContent({ day }: { day: string }) {
         <button
           onClick={() => router.push("/dashboard")}
           style={{
-            width: "100%", padding: "16px 0", borderRadius: 50, border: "none",
+            width: "100%", padding: "16px 0", borderRadius: 50,
             background: "#161616", color: "#666",
             fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 17, letterSpacing: 1.5,
             cursor: "pointer", marginTop: 8, marginBottom: 8,

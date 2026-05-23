@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   const stats = users.map((user) => {
     const pbs = user.personalBests;
-    const displayName = user.profile?.name?.trim() || user.username;
+    const displayName = user.nickname?.trim() || user.profile?.name?.trim() || user.username;
 
     // Best e1RM per exercise (all time)
     const bestByExercise: Record<string, number> = {};
@@ -50,14 +50,14 @@ export async function GET(req: NextRequest) {
     const overall =
       Math.round(Object.values(bestByBodyPart).reduce((s, v) => s + v, 0) * 10) / 10;
 
-    return { userId: user.id, displayName, bestByBodyPart, overall, pbs };
+    return { userId: user.id, displayName, realUsername: user.username, bestByBodyPart, overall, pbs };
   });
 
   // Overall ranking
   const overall = stats
     .filter((u) => u.overall > 0)
     .sort((a, b) => b.overall - a.overall)
-    .map((u, i) => ({ userId: u.userId, username: u.displayName, score: u.overall, rank: i + 1 }));
+    .map((u, i) => ({ userId: u.userId, username: u.displayName, realUsername: u.realUsername, score: u.overall, rank: i + 1 }));
 
   // Per-body-part rankings
   const bodyParts: Record<string, Array<{ userId: string; username: string; bestE1RM: number; rank: number }>> = {};
@@ -68,6 +68,7 @@ export async function GET(req: NextRequest) {
       .map((u, i) => ({
         userId: u.userId,
         username: u.displayName,
+        realUsername: u.realUsername,
         bestE1RM: u.bestByBodyPart[bp],
         rank: i + 1,
       }));
@@ -101,6 +102,7 @@ export async function GET(req: NextRequest) {
         return {
           userId: user.userId,
           username: user.displayName,
+          realUsername: user.realUsername,
           exerciseName: bestExercise,
           improvementPct: bestPct,
         };

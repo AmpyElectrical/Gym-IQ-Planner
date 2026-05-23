@@ -3,14 +3,16 @@
 import React from "react";
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard" },
   { id: "plan",    icon: "📋",  label: "Plan",    route: "/dashboard/plan" },
   { id: "pbs",     icon: "🏆",  label: "PBs",     route: "/dashboard/pbs" },
   { id: "ranks",   icon: "👑",  label: "Ranks",   route: "/dashboard/ranks" },
-  { id: "coach",   icon: "🤖",  label: "Coach",   route: "/dashboard/coach"   },
-  { id: "profile", icon: "👤",  label: "Profile", route: "/dashboard/profile" },
+  { id: "coach",    icon: "🤖",  label: "Coach",    route: "/dashboard/coach"    },
+  { id: "profile",  icon: "👤",  label: "Profile",  route: "/dashboard/profile"  },
+  { id: "settings", icon: "⚙️",  label: "Settings", route: "/dashboard/settings" },
 ];
 
 const BODY_PARTS = [
@@ -25,9 +27,9 @@ const BODY_PARTS = [
 const MEDALS = ["🥇", "🥈", "🥉"];
 const medal = (rank: number) => (rank <= 3 ? MEDALS[rank - 1] : `#${rank}`);
 
-type OverallEntry   = { userId: string; username: string; score: number; rank: number };
-type BodyPartEntry  = { userId: string; username: string; bestE1RM: number; rank: number };
-type ImprovedEntry  = { userId: string; username: string; exerciseName: string; improvementPct: number; rank: number };
+type OverallEntry   = { userId: string; username: string; realUsername?: string; score: number; rank: number };
+type BodyPartEntry  = { userId: string; username: string; realUsername?: string; bestE1RM: number; rank: number };
+type ImprovedEntry  = { userId: string; username: string; realUsername?: string; exerciseName: string; improvementPct: number; rank: number };
 type LeaderboardData = {
   overall: OverallEntry[];
   bodyParts: Record<string, BodyPartEntry[]>;
@@ -124,6 +126,7 @@ export default function RanksPage() {
                       key={u.userId}
                       rank={u.rank}
                       username={u.username}
+                      realUsername={u.realUsername}
                       isMe={u.userId === myId}
                       right={<span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 20, color: "#FF5F1F" }}>{u.score} <span style={{ fontSize: 12, color: "#666" }}>e1RM</span></span>}
                     />
@@ -159,6 +162,7 @@ export default function RanksPage() {
                               key={u.userId}
                               rank={u.rank}
                               username={u.username}
+                              realUsername={u.realUsername}
                               isMe={u.userId === myId}
                               right={<span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: bp.color }}>{u.bestE1RM} kg</span>}
                             />
@@ -189,6 +193,7 @@ export default function RanksPage() {
                               key={u.userId}
                               rank={u.rank}
                               username={u.username}
+                              realUsername={u.realUsername}
                               isMe={u.userId === myId}
                               sub={u.exerciseName}
                               right={
@@ -217,30 +222,32 @@ export default function RanksPage() {
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
       }}>
         {TABS.map((t) => (
-          <button
+          <Link
             key={t.id}
-            onClick={() => router.push(t.route)}
+            href={t.route}
+            prefetch={true}
             style={{
-              background: "none", border: "none", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 6px",
               color: pathname === t.route ? "#FF5F1F" : "#666",
               fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
               transform: pathname === t.route ? "translateY(-2px)" : "none",
               transition: "all 0.2s",
+              textDecoration: "none",
             }}
           >
             <span style={{ fontSize: 20 }}>{t.icon}</span>
             {t.label}
-          </button>
+          </Link>
         ))}
       </nav>
     </div>
   );
 }
 
-function RankRow({ rank, username, isMe, sub, right }: {
-  rank: number; username: string; isMe: boolean; sub?: string; right: React.ReactNode;
+function RankRow({ rank, username, realUsername, isMe, sub, right }: {
+  rank: number; username: string; realUsername?: string; isMe: boolean; sub?: string; right: React.ReactNode;
 }) {
+  const showReal = realUsername && realUsername !== username;
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 12,
@@ -255,6 +262,7 @@ function RankRow({ rank, username, isMe, sub, right }: {
         <div style={{ fontWeight: 700, fontSize: 14, color: isMe ? "#FF5F1F" : "#F5F5F5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {username}{isMe && " (you)"}
         </div>
+        {showReal && <div style={{ fontSize: 11, color: "#444", marginTop: 1 }}>@{realUsername}</div>}
         {sub && <div style={{ fontSize: 11, color: "#666", marginTop: 1 }}>{sub}</div>}
       </div>
       {right}

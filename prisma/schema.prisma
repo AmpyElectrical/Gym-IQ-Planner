@@ -8,13 +8,19 @@ datasource db {
 }
 
 model User {
-  id          String        @id @default(cuid())
-  username    String        @unique
-  createdAt   DateTime      @default(now())
-  profile     Profile?
-  checkIns    CheckIn[]
+  id            String         @id @default(cuid())
+  username      String         @unique
+  nickname      String?
+  password      String?
+  firstName     String?
+  lastName      String?
+  email         String?
+  createdAt     DateTime       @default(now())
+  profile       Profile?
+  checkIns      CheckIn[]
   personalBests PersonalBest[]
   workoutPlans  WorkoutPlan[]
+  trainingPlans TrainingPlan[]
 }
 
 model Profile {
@@ -30,8 +36,9 @@ model Profile {
   workHours       String
   wakeTime        String
   sleepTime       String
-  gymTime         String
-  injuries        String
+  gymTime          String
+  programStartDate DateTime?
+  injuries         String
   goals           Json
   weakPoints      Json
   updatedAt       DateTime @updatedAt
@@ -72,14 +79,27 @@ model PersonalBest {
   createdAt    DateTime @default(now())
 }
 
+model TrainingPlan {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  isActive     Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  workoutPlans WorkoutPlan[]
+}
+
 model WorkoutPlan {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  day       String
-  week      String
-  typeId    String
-  exercises Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainingPlanId String?
+  trainingPlan   TrainingPlan? @relation(fields: [trainingPlanId], references: [id], onDelete: SetNull)
+  day            String
+  week           String
+  typeId         String
+  exercises      Json
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 }

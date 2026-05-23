@@ -3,6 +3,7 @@
 import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard" },
@@ -10,7 +11,8 @@ const TABS = [
   { id: "pbs",     icon: "🏆",  label: "PBs",     route: "/dashboard/pbs" },
   { id: "ranks",   icon: "👑",  label: "Ranks",   route: "/dashboard/ranks" },
   { id: "coach",   icon: "🤖",  label: "Coach",   route: "/dashboard/coach" },
-  { id: "profile", icon: "👤",  label: "Profile", route: "/dashboard/profile" },
+  { id: "profile",  icon: "👤",  label: "Profile",  route: "/dashboard/profile"  },
+  { id: "settings", icon: "⚙️",  label: "Settings", route: "/dashboard/settings" },
 ];
 
 const QUICK_PROMPTS = [
@@ -232,21 +234,22 @@ export default function CoachPage() {
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
       }}>
         {TABS.map((t) => (
-          <button
+          <Link
             key={t.id}
-            onClick={() => router.push(t.route)}
+            href={t.route}
+            prefetch={true}
             style={{
-              background: "none", border: "none", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 6px",
               color: pathname === t.route ? "#FF5F1F" : "#666",
               fontFamily: "'Barlow', sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
               transform: pathname === t.route ? "translateY(-2px)" : "none",
               transition: "all 0.2s",
+              textDecoration: "none",
             }}
           >
             <span style={{ fontSize: 20 }}>{t.icon}</span>
             {t.label}
-          </button>
+          </Link>
         ))}
       </nav>
     </div>
