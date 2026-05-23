@@ -58,6 +58,7 @@ export default function ProfilePage() {
   const [transcript, setTranscript] = useState("");
   const [recording, setRecording] = useState(false);
   const [interpreting, setInterpreting] = useState(false);
+  const [speechError, setSpeechError] = useState("");
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
@@ -135,19 +136,21 @@ export default function ProfilePage() {
   }
 
   function toggleRecording() {
+    setSpeechError("");
+
+    if (recording) {
+      recognitionRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+
     const SpeechRecognitionAPI =
       (typeof window !== "undefined" &&
         ((window as unknown as Record<string, unknown>).SpeechRecognition as typeof SpeechRecognition ||
           (window as unknown as Record<string, unknown>).webkitSpeechRecognition as typeof SpeechRecognition)) || null;
 
     if (!SpeechRecognitionAPI) {
-      alert("Speech recognition is not supported in this browser.");
-      return;
-    }
-
-    if (recording) {
-      recognitionRef.current?.stop();
-      setRecording(false);
+      setSpeechError("Speech recognition is not supported in this browser. Try Chrome or Edge.");
       return;
     }
 
@@ -164,10 +167,24 @@ export default function ProfilePage() {
       setTranscript(full);
     };
 
+    recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+      if (e.error === "not-allowed") {
+        setSpeechError("Microphone permission denied. Allow mic access and try again.");
+      } else if (e.error !== "aborted") {
+        setSpeechError(`Speech error: ${e.error}`);
+      }
+      setRecording(false);
+    };
+
     recognition.onend = () => setRecording(false);
-    recognition.start();
-    recognitionRef.current = recognition;
-    setRecording(true);
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+      setRecording(true);
+    } catch {
+      setSpeechError("Could not start recording. Ensure the page is served over HTTPS.");
+    }
   }
 
   async function handleInterpret() {
@@ -248,26 +265,34 @@ export default function ProfilePage() {
             {recording ? "⏹ STOP RECORDING" : "🎙 START RECORDING"}
           </button>
 
+          {speechError && (
+            <div style={{ background: "#EF444418", border: "1px solid #EF444444", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#EF4444", lineHeight: 1.5 }}>
+              {speechError}
+            </div>
+          )}
+
           {transcript && (
             <div style={{ background: "#1E1E1E", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#ccc", lineHeight: 1.6, maxHeight: 100, overflowY: "auto" }}>
               {transcript}
             </div>
           )}
 
-          <button
-            onClick={handleInterpret}
-            disabled={!transcript.trim() || interpreting}
-            style={{
-              width: "100%", padding: "12px 0", borderRadius: 50, border: "none",
-              background: !transcript.trim() || interpreting ? "#333" : "#1E1E1E",
-              color: !transcript.trim() || interpreting ? "#555" : "#F5F5F5",
-              border: "1px solid #333",
-              fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1,
-              cursor: !transcript.trim() || interpreting ? "not-allowed" : "pointer",
-            } as React.CSSProperties}
-          >
-            {interpreting ? "INTERPRETING..." : "⚡ FILL PROFILE FROM TRANSCRIPT"}
-          </button>
+          {!recording && transcript && (
+            <button
+              onClick={handleInterpret}
+              disabled={interpreting}
+              style={{
+                width: "100%", padding: "12px 0", borderRadius: 50,
+                background: interpreting ? "#333" : "#1E1E1E",
+                color: interpreting ? "#555" : "#F5F5F5",
+                border: "1px solid #333",
+                fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1,
+                cursor: interpreting ? "not-allowed" : "pointer",
+              } as React.CSSProperties}
+            >
+              {interpreting ? "INTERPRETING..." : "⚡ FILL PROFILE FROM TRANSCRIPT"}
+            </button>
+          )}
         </div>
 
         {/* ── BASICS CARD ── */}
