@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 export default function Home() {
   const router = useRouter();
   const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -19,7 +20,7 @@ export default function Home() {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: username.trim() }),
+        body: JSON.stringify({ username: username.trim(), password }),
       });
 
       if (!res.ok) {
@@ -101,11 +102,11 @@ export default function Home() {
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <input
             type="text"
-            placeholder="Enter your username"
+            placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             disabled={loading}
-            autoComplete="off"
+            autoComplete="username"
             autoCapitalize="none"
             style={{
               background: "#1E1E1E",
@@ -119,6 +120,30 @@ export default function Home() {
               width: "100%",
               textAlign: "center",
               letterSpacing: 0.5,
+              transition: "border-color 0.2s",
+            }}
+            onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")}
+            onBlur={(e) => (e.target.style.borderColor = "#333")}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={loading}
+            autoComplete="current-password"
+            style={{
+              background: "#1E1E1E",
+              color: "#F5F5F5",
+              border: "1px solid #333",
+              borderRadius: 12,
+              padding: "14px 18px",
+              fontSize: 16,
+              fontFamily: "'Barlow', sans-serif",
+              outline: "none",
+              width: "100%",
+              textAlign: "center",
+              letterSpacing: 2,
               transition: "border-color 0.2s",
             }}
             onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")}
@@ -150,10 +175,6 @@ export default function Home() {
             {loading ? "LOADING..." : "LET'S GO"}
           </button>
         </form>
-
-        <p style={{ color: "#444", fontSize: 12, marginTop: 32 }}>
-          New username? We'll create your account automatically.
-        </p>
       </div>
     </main>
   );

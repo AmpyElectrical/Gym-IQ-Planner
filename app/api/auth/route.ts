@@ -2,39 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
-  const { username } = await req.json();
+  const { username, password } = await req.json();
 
   if (!username || typeof username !== "string" || !username.trim()) {
     return NextResponse.json({ error: "Username is required" }, { status: 400 });
   }
 
-  const normalized = username.trim().toLowerCase();
-
-  let user = await prisma.user.findUnique({ where: { username: normalized } });
+  const user = await prisma.user.findUnique({ where: { username: username.trim() } });
 
   if (!user) {
-    user = await prisma.user.create({
-      data: {
-        username: normalized,
-        profile: {
-          create: {
-            name: "",
-            age: "",
-            weight: 0,
-            experience: "",
-            occupation: "",
-            physicalDemand: "",
-            workHours: "",
-            wakeTime: "",
-            sleepTime: "",
-            gymTime: "",
-            injuries: "",
-            goals: [],
-            weakPoints: [],
-          },
-        },
-      },
-    });
+    return NextResponse.json({ error: "User not found" }, { status: 401 });
+  }
+
+  if (user.password && user.password !== password) {
+    return NextResponse.json({ error: "Incorrect password" }, { status: 401 });
   }
 
   const res = NextResponse.json({ user });
