@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
 const anthropic = new Anthropic();
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -32,8 +35,8 @@ export async function POST(req: NextRequest) {
       exercisesByBodyPart[ex.bodyPart].push(ex.name);
     }
     const exerciseList = Object.entries(exercisesByBodyPart)
-      .map(([bp, names]) => `${bp}: ${names.join(", ")}`)
-      .join("\n");
+      .map(([bp, names]) => `${bp.toUpperCase()}: ${names.join(", ")}`)
+      .join(". ");
     console.log("Exercises fetched from DB:", allExercises.length);
     console.log("Sample exercises:", allExercises.slice(0, 5).map((e) => e.name));
 
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
         const message = await Promise.race([
           anthropic.messages.create({
             model: "claude-sonnet-4-6",
-            max_tokens: 4096,
+            max_tokens: 8000,
             system: `You are an experienced personal trainer. Build a 2-week gym programme as JSON following every rule below without exception.
 
 LISTENING RULES — NON NEGOTIABLE:
@@ -105,22 +108,26 @@ SESSION STRUCTURE RULES — GENERAL PRINCIPLES:
 - CORE STRETCH DAY: Mix core strengthening exercises with mobility and stretching tailored to the client's heaviest muscle groups that week.
 - ALWAYS: The client's specific requests override these general principles.
 
-WEEK 1 vs WEEK 2 RULES:
-- Week 1 and Week 2 must not use identical exercise lists for the same session type.
-- Vary the stimulus between weeks — swap at least one exercise per session, or change rep ranges, or change equipment.
-- The session types (push/pull/legs etc.) can repeat across weeks but the specific exercises must differ.
+WEEK 1 vs WEEK 2 — 14 DAY CYCLE RULES:
+- Do not treat Week 1 and Week 2 as two separate identical weeks. Treat all 14 days as one continuous training cycle.
+- Sessions do not need to be on the same days in both weeks. Monday Week 1 can be Push. Monday Week 2 can be Legs.
+- Distribute sessions across 14 days to maximise recovery between similar muscle groups.
+- Example: if programming 3 leg sessions across 14 days place them on days 1, 5, and 11 — not days 1, 5, 8, 12.
+- Heavy sessions for the same muscle group should be at least 4-5 days apart across the full 14-day cycle.
+- Week 2 can have different session types on different days to Week 1 — this is encouraged not just exercise variation.
+- Always ensure the client gets the total number of each session type they requested across the full 14 days combined.
 
 MANDATORY BUILD PROCESS:
-- Step 1: Read the entire conversation. List every specific client instruction numbered.
+- Step 1: Read the entire conversation and note every specific client instruction — do not write them out.
 - Step 2: Plan the weekly structure — decide which session type goes on each day before selecting exercises.
 - Step 3: For each session select exercises following all programming rules above.
 - Step 4: Before finalising, check each session against the client's specific instructions. Adjust if anything is missing or wrong.
 
 Use ONLY the exercises listed below. Choose 4-6 exercises per training session. Rest/stretch days use [].
-JSON shape: {"week1":{"Mon":{"typeId":"push","customExercises":[{"name":"ExerciseName","sets":4,"reps":"8-10","bodyPart":"bodypart"}]},...},"week2":{...},"reasoning":"Numbered instruction list and confirmation each was addressed."}
+JSON shape: {"week1":{"Mon":{"typeId":"push","customExercises":[{"name":"ExerciseName","sets":4,"reps":"8-10","bodyPart":"bodypart"}]},...},"week2":{...}}
 Valid typeId: push, pull, legs, upper, lower, arms, core, cardio, stretch, core-stretch, rest.
 
-Return ONLY valid JSON. No explanation. No markdown. Start with { end with }
+Do not write any explanation. Return ONLY the JSON object starting with { immediately.
 
 EXERCISES — use only these, no others:
 ${exerciseList}`,
@@ -144,19 +151,29 @@ ${exerciseList}`,
       }
 
       console.log("RAW AI RESPONSE:", raw);
+      console.log("Response length:", raw.length, "chars");
       raw = raw.replace(/```json|```/g, "").trim();
-      // Always extract from first { to last } to discard any pre-JSON reasoning text
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.error("[plan/generate] no JSON object found in response. raw:", raw);
+      const firstBrace = raw.indexOf("{");
+      const lastBrace = raw.lastIndexOf("}");
+      if (firstBrace === -1 || lastBrace === -1) {
+        console.error("[plan/generate] JSON extraction failed — no braces found. raw:", raw);
         return NextResponse.json({ error: "AI returned invalid JSON — please try again." }, { status: 500 });
       }
+      const jsonStr = raw.substring(firstBrace, lastBrace + 1);
       try {
-        parsed = JSON.parse(jsonMatch[0]);
+        console.log("[plan/generate] JSON extraction succeeded, parsing", jsonStr.length, "chars");
+        parsed = JSON.parse(jsonStr);
       } catch {
-        console.error("[plan/generate] JSON.parse failed. raw:", jsonMatch[0]);
+        console.error("[plan/generate] JSON.parse failed. jsonStr:", jsonStr);
         return NextResponse.json({ error: "AI returned invalid JSON — please try again." }, { status: 500 });
       }
+    }
+
+    for (const day of DAYS) {
+      console.log(`${day} week1 exercises:`, parsed.week1?.[day]?.customExercises?.length ?? "MISSING");
+    }
+    for (const day of DAYS) {
+      console.log(`${day} week2 exercises:`, parsed.week2?.[day]?.customExercises?.length ?? "MISSING");
     }
 
     for (const [weekKey, weekData] of [["week1", parsed.week1], ["week2", parsed.week2]] as [string, Record<string, DayPlan> | undefined][]) {
@@ -204,6 +221,7 @@ ${exerciseList}`,
     }
 
     await Promise.all(upserts);
+    console.log("Saved to DB:", upserts.length, "sessions with exercises");
 
     const plan = await prisma.workoutPlan.findMany({ where: { trainingPlanId: activePlan.id }, orderBy: [{ week: "asc" }, { createdAt: "asc" }] });
 

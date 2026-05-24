@@ -131,6 +131,7 @@ export default function PlanPage() {
   // ── AI generate plan state ──
   const [generating, setGenerating]   = useState(false);
   const [aiReasoning, setAiReasoning] = useState("");
+  const [showReasoning, setShowReasoning] = useState(false);
   const [showAiInput, setShowAiInput] = useState(false);
   const [aiMessages, setAiMessages]   = useState<{ role: "user" | "ai"; content: string }[]>([]);
   const [aiInput, setAiInput]         = useState("");
@@ -142,6 +143,7 @@ export default function PlanPage() {
   const aiRecognitionRef              = useRef<{ stop(): void } | null>(null);
   const aiProgressRef                 = useRef<ReturnType<typeof setInterval> | null>(null);
   const aiTextareaRef                 = useRef<HTMLTextAreaElement | null>(null);
+  const aiChatBottomRef               = useRef<HTMLDivElement | null>(null);
   const [pendingPlanData, setPendingPlanData] = useState<PendingPlan | null>(null);
   const [savingPlan, setSavingPlan]           = useState(false);
 
@@ -170,6 +172,10 @@ export default function PlanPage() {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [aiInput]);
+
+  useEffect(() => {
+    aiChatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [aiMessages, aiChatLoading]);
 
   useEffect(() => {
     if (!activePlanId) return;
@@ -690,16 +696,16 @@ export default function PlanPage() {
               ) : showAiInput ? (
                 <>
                   {/* Chat messages */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12, maxHeight: 220, overflowY: "auto" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12, maxHeight: 400, minHeight: 60, overflowY: "auto", paddingRight: 2 }}>
                     {aiMessages.map((msg, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
-                        <div style={{ maxWidth: "85%", background: msg.role === "user" ? "#FF5F1F" : "#1E1E1E", border: msg.role === "ai" ? "1px solid #333" : "none", borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px", padding: "9px 13px", fontSize: 13, color: "#F5F5F5", lineHeight: 1.5 }}>
+                      <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", flexShrink: 0 }}>
+                        <div style={{ maxWidth: "85%", background: msg.role === "user" ? "#FF5F1F" : "#1E1E1E", border: msg.role === "ai" ? "1px solid #333" : "none", borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px", padding: "10px 14px", fontSize: 13, color: "#F5F5F5", lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                           {msg.content}
                         </div>
                       </div>
                     ))}
                     {aiChatLoading && (
-                      <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                      <div style={{ display: "flex", justifyContent: "flex-start", flexShrink: 0 }}>
                         <div style={{ background: "#1E1E1E", border: "1px solid #333", borderRadius: "14px 14px 14px 4px", padding: "10px 14px", display: "flex", gap: 4, alignItems: "center" }}>
                           {[0, 1, 2].map((i) => (
                             <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#666", animation: `typingDot 1.2s ease-in-out ${i * 0.2}s infinite` }} />
@@ -707,6 +713,7 @@ export default function PlanPage() {
                         </div>
                       </div>
                     )}
+                    <div ref={aiChatBottomRef} />
                   </div>
                   {/* Input row */}
                   <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "flex-end" }}>
@@ -765,7 +772,25 @@ export default function PlanPage() {
                   ⚡ GENERATE MY PLAN WITH AI
                 </button>
               )}
-              {aiReasoning && <p style={{ fontSize: 12, color: "#555", marginTop: 10, lineHeight: 1.5, fontStyle: "italic" }}>{aiReasoning}</p>}
+              {aiReasoning && (
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    onClick={() => setShowReasoning((v) => !v)}
+                    style={{ background: "none", border: "none", color: "#555", fontFamily: "'Barlow', sans-serif", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, letterSpacing: 0.3 }}
+                  >
+                    {showReasoning ? "📋 Hide Reasoning" : "📋 View AI Reasoning"}
+                  </button>
+                  {showReasoning && (
+                    <div style={{ marginTop: 8, background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, padding: "12px 14px", maxHeight: 300, overflowY: "auto" }}>
+                      {aiReasoning.split("\n").map((line, i) => (
+                        <p key={i} style={{ fontSize: 12, color: line.startsWith("INSTRUCTIONS") || line.startsWith("WEEKLY") || line.startsWith("EXERCISE") || line.startsWith("WEEK 1") || line.startsWith("TRADE") ? "#FF5F1F" : "#888", margin: "0 0 4px", lineHeight: 1.6, fontWeight: line.startsWith("INSTRUCTIONS") || line.startsWith("WEEKLY") || line.startsWith("EXERCISE") || line.startsWith("WEEK 1") || line.startsWith("TRADE") ? 700 : 400, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                          {line || " "}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
