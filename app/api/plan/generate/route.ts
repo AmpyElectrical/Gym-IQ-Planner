@@ -137,7 +137,7 @@ ${exerciseList}`,
             }],
           }),
           timeoutPromise,
-        ]) as Awaited<ReturnType<typeof anthropic.messages.create>>;
+        ]) as Anthropic.Message;
         raw = message.content[0].type === "text" ? message.content[0].text.trim() : "{}";
       } catch (error) {
         const msg = (error as Error)?.message ?? "";
