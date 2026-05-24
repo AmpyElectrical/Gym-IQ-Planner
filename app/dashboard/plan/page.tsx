@@ -1,7 +1,9 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import React from "react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { getCurrentWeek } from "@/lib/weekUtils";
@@ -17,8 +19,9 @@ const SESSION_TYPES = [
   { id: "arms",    label: "Arms",             icon: "💪", color: "#A78BFA" },
   { id: "core",    label: "Core",             icon: "🎯", color: "#22D3EE" },
   { id: "cardio",  label: "Cardio",           icon: "🏃", color: "#F472B6" },
-  { id: "stretch", label: "Stretch/Recovery", icon: "🧘", color: "#34D399" },
-  { id: "rest",    label: "Rest",             icon: "😴", color: "#666"    },
+  { id: "stretch",      label: "Stretch/Recovery", icon: "🧘", color: "#34D399" },
+  { id: "core-stretch", label: "Core + Stretch",   icon: "🧘", color: "#22D3EE" },
+  { id: "rest",         label: "Rest",             icon: "😴", color: "#666"    },
 ];
 
 const SESSION_BODY_PARTS: Record<string, string[]> = {
@@ -28,8 +31,9 @@ const SESSION_BODY_PARTS: Record<string, string[]> = {
   upper:  ["chest", "back", "shoulders", "arms"],
   lower:  ["legs",  "core"],
   arms:   ["arms"],
-  core:   ["core"],
-  cardio: ["cardio"],
+  core:         ["core"],
+  cardio:       ["cardio"],
+  "core-stretch": ["core", "stretch"],
 };
 
 const SESSION_TARGETS: Record<string, { sets: number; reps: string }> = {
@@ -39,11 +43,12 @@ const SESSION_TARGETS: Record<string, { sets: number; reps: string }> = {
   upper:  { sets: 3, reps: "10"   },
   lower:  { sets: 4, reps: "8"    },
   arms:   { sets: 3, reps: "12"   },
-  core:   { sets: 3, reps: "15"   },
-  cardio: { sets: 3, reps: "20"   },
+  core:           { sets: 3, reps: "15"   },
+  cardio:         { sets: 3, reps: "20"   },
+  "core-stretch": { sets: 3, reps: "30s"  },
 };
 
-const BODY_PART_OPTIONS = ["chest", "back", "shoulders", "arms", "legs", "core", "cardio"];
+const BODY_PART_OPTIONS = ["chest", "back", "shoulders", "arms", "legs", "core", "cardio", "stretch"];
 const EQUIPMENT_OPTIONS  = ["Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight", "Kettlebell", "Band", "Other"];
 
 const DEFAULT_EXERCISES: Record<string, string[]> = {
@@ -53,8 +58,19 @@ const DEFAULT_EXERCISES: Record<string, string[]> = {
   upper: ["Bench Press", "Barbell Row", "Overhead Press", "Pull-ups"],
   lower: ["Squat", "Romanian Deadlift", "Leg Press", "Calf Raises"],
   arms:  ["Barbell Curl", "Skull Crushers", "Hammer Curl", "Tricep Pushdown"],
-  core:  ["Plank", "Cable Crunch", "Hanging Leg Raise", "Ab Wheel"],
+  core:           ["Plank", "Cable Crunch", "Hanging Leg Raise", "Ab Wheel"],
+  "core-stretch": ["Plank", "Dead Bug", "Cable Crunch", "Hanging Leg Raise", "Ab Wheel", "Hip Flexor Stretch", "Hamstring Stretch", "Quad Stretch", "Chest Opener", "Lat Stretch", "Thoracic Rotation", "Pigeon Pose", "Child's Pose"],
 };
+
+const PROGRESS_STAGES = [
+  { pct: 0,  msg: "Reading your profile and goals..." },
+  { pct: 15, msg: "Analysing your training history..." },
+  { pct: 30, msg: "Choosing the right session types for each day..." },
+  { pct: 50, msg: "Selecting exercises for Week 1..." },
+  { pct: 65, msg: "Selecting exercises for Week 2..." },
+  { pct: 80, msg: "Calculating sets and reps based on your level..." },
+  { pct: 90, msg: "Finalising your plan details..." },
+];
 
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard"         },
@@ -66,10 +82,12 @@ const TABS = [
   { id: "settings", icon: "⚙️",  label: "Settings", route: "/dashboard/settings" },
 ];
 
-type PlanEntry    = { id: string; day: string; week: string; typeId: string };
+type PlanEntry    = { id: string; day: string; week: string; typeId: string; exercises?: { name: string; sets: number; reps: string; bodyPart: string }[] };
 type Exercise     = { id: string; name: string; bodyPart: string; equipment: string; description: string };
 type BuilderItem  = { exId: string; name: string; bodyPart: string; equipment: string; sets: number; reps: string };
 type TrainingPlan = { id: string; name: string; isActive: boolean };
+type AiDayPlan    = { typeId: string; customExercises?: { name: string; sets: number; reps: string; bodyPart: string }[] };
+type PendingPlan  = { week1: Record<string, AiDayPlan>; week2: Record<string, AiDayPlan>; reasoning: string };
 
 const inputStyle: React.CSSProperties = {
   background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #333",
@@ -111,10 +129,21 @@ export default function PlanPage() {
   const [savingCustom, setSavingCustom]       = useState(false);
 
   // ── AI generate plan state ──
-  const [generating, setGenerating]         = useState(false);
-  const [aiReasoning, setAiReasoning]       = useState("");
-  const [showAiInput, setShowAiInput]       = useState(false);
-  const [aiInstructions, setAiInstructions] = useState("");
+  const [generating, setGenerating]   = useState(false);
+  const [aiReasoning, setAiReasoning] = useState("");
+  const [showAiInput, setShowAiInput] = useState(false);
+  const [aiMessages, setAiMessages]   = useState<{ role: "user" | "ai"; content: string }[]>([]);
+  const [aiInput, setAiInput]         = useState("");
+  const [aiRecording, setAiRecording] = useState(false);
+  const [aiSuccess, setAiSuccess]     = useState(false);
+  const [aiError, setAiError]         = useState("");
+  const [aiProgress, setAiProgress]   = useState<{ pct: number; msg: string }>(PROGRESS_STAGES[0]);
+  const [aiChatLoading, setAiChatLoading] = useState(false);
+  const aiRecognitionRef              = useRef<{ stop(): void } | null>(null);
+  const aiProgressRef                 = useRef<ReturnType<typeof setInterval> | null>(null);
+  const aiTextareaRef                 = useRef<HTMLTextAreaElement | null>(null);
+  const [pendingPlanData, setPendingPlanData] = useState<PendingPlan | null>(null);
+  const [savingPlan, setSavingPlan]           = useState(false);
 
   // ── Training plans state ──
   const [trainingPlans, setTrainingPlans]       = useState<TrainingPlan[]>([]);
@@ -134,6 +163,22 @@ export default function PlanPage() {
       .then((data) => { if (!data) return; setWeek(getCurrentWeek(data.user.createdAt)); setPageLoading(false); })
       .catch(() => router.replace("/"));
   }, [router]);
+
+  useEffect(() => {
+    const el = aiTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [aiInput]);
+
+  useEffect(() => {
+    if (!activePlanId) return;
+    setAiMessages([{ role: "ai", content: "Let's build your program. What do you want to focus on this block — strength, size, both? And how many days per week are you training?" }]);
+    setAiInput("");
+    setShowAiInput(false);
+    setPendingPlanData(null);
+    setAiError("");
+  }, [activePlanId]);
 
   useEffect(() => {
     if (pageLoading) return;
@@ -156,7 +201,17 @@ export default function PlanPage() {
     }).catch(() => {});
   }, [pageLoading]);
 
-  const getEntry = (day: string) => plan.find((p) => p.day === day && p.week === week) ?? null;
+  const previewPlan = useMemo<PlanEntry[]>(() => {
+    if (!pendingPlanData) return [];
+    const entries: PlanEntry[] = [];
+    for (const [day, dp] of Object.entries(pendingPlanData.week1 ?? {}))
+      entries.push({ id: `preview-1-${day}`, day, week: "1", typeId: dp.typeId, exercises: dp.customExercises ?? [] });
+    for (const [day, dp] of Object.entries(pendingPlanData.week2 ?? {}))
+      entries.push({ id: `preview-2-${day}`, day, week: "2", typeId: dp.typeId, exercises: dp.customExercises ?? [] });
+    return entries;
+  }, [pendingPlanData]);
+
+  const getEntry = (day: string) => (pendingPlanData ? previewPlan : plan).find((p) => p.day === day && p.week === week) ?? null;
   const getType  = (typeId: string) => SESSION_TYPES.find((s) => s.id === typeId) ?? null;
 
   async function handleSelect(typeId: string) {
@@ -176,7 +231,17 @@ export default function PlanPage() {
   function openBuilder(day: string) {
     const entry = getEntry(day);
     if (!entry) return;
-    const target       = SESSION_TARGETS[entry.typeId] ?? { sets: 3, reps: "10" };
+    const target = SESSION_TARGETS[entry.typeId] ?? { sets: 3, reps: "10" };
+
+    if (Array.isArray(entry.exercises) && entry.exercises.length > 0) {
+      setBuilderItems(entry.exercises.map((ex) => {
+        const found = exercises.find((e) => e.name === ex.name);
+        return { exId: found?.id ?? ex.name, name: ex.name, bodyPart: ex.bodyPart, equipment: found?.equipment ?? "Other", sets: ex.sets, reps: ex.reps };
+      }));
+      setCustomizeDay(day);
+      return;
+    }
+
     const defaultNames = DEFAULT_EXERCISES[entry.typeId] ?? [];
     const defaults     = defaultNames
       .map((name) => exercises.find((e) => e.name === name))
@@ -266,7 +331,7 @@ export default function PlanPage() {
     setTrainingPlans((prev) => prev.map((p) => ({ ...p, isActive: p.id === planId })));
     if (planDataCache[planId]) {
       setPlan(planDataCache[planId]);
-      fetch(`/api/plans/${planId}/activate`, { method: "POST" });
+      await fetch(`/api/plans/${planId}/activate`, { method: "POST" });
       return;
     }
     setPlanSwitching(true);
@@ -288,9 +353,15 @@ export default function PlanPage() {
     try {
       const res  = await fetch("/api/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newPlanName.trim() }) });
       const data = await res.json();
-      setTrainingPlans((prev) => [...prev, data.plan]);
+      const newPlan = data.plan;
+      setTrainingPlans((prev) => [...prev, newPlan]);
       setNewPlanName("");
       setShowNewPlanInput(false);
+      await fetch(`/api/plans/${newPlan.id}/activate`, { method: "POST" });
+      setActivePlanId(newPlan.id);
+      setTrainingPlans((prev) => prev.map((p) => ({ ...p, isActive: p.id === newPlan.id })));
+      setPlan([]);
+      setPlanDataCache((prev) => ({ ...prev, [newPlan.id]: [] }));
     } finally {
       setCreatingPlan(false);
     }
@@ -313,20 +384,131 @@ export default function PlanPage() {
   }
 
   // ── AI plan generation ──
+  function buildPlanSummary(p: PendingPlan): string {
+    const getLabel = (typeId: string) => SESSION_TYPES.find((s) => s.id === typeId)?.label ?? typeId;
+    const rows = (weekData: Record<string, AiDayPlan>) =>
+      DAYS.filter((d) => weekData[d]).map((d) => `${d} — ${getLabel(weekData[d].typeId)}`).join("\n");
+    return `Here's your 2-week plan:\n\nWeek 1\n${rows(p.week1 ?? {})}\n\nWeek 2\n${rows(p.week2 ?? {})}\n\nTap ✅ Save This Plan to lock it in, or keep chatting to make changes.`;
+  }
+
   async function handleAiGenerate() {
     setGenerating(true);
     setAiReasoning("");
+    setAiError("");
+    setAiProgress(PROGRESS_STAGES[0]);
+    let stageIdx = 0;
+    aiProgressRef.current = setInterval(() => {
+      stageIdx = Math.min(stageIdx + 1, PROGRESS_STAGES.length - 1);
+      setAiProgress(PROGRESS_STAGES[stageIdx]);
+      if (stageIdx === PROGRESS_STAGES.length - 1) clearInterval(aiProgressRef.current!);
+    }, 3000);
     try {
-      const res  = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ additionalInstructions: aiInstructions.trim() }) });
+      const res  = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationHistory: aiMessages, dryRun: true }) });
+      const data = await res.json();
+      if (data.parsed) {
+        clearInterval(aiProgressRef.current!);
+        setAiProgress({ pct: 100, msg: "Plan ready — review below." });
+        const pending: PendingPlan = { week1: data.parsed.week1 ?? {}, week2: data.parsed.week2 ?? {}, reasoning: data.reasoning ?? "" };
+        setPendingPlanData(pending);
+        setAiReasoning(data.reasoning ?? "");
+        setAiMessages((prev) => [...prev, { role: "ai", content: buildPlanSummary(pending) }]);
+      } else {
+        setAiError(data.error || "Failed to generate plan. Please try again.");
+      }
+    } catch {
+      setAiError("Network error. Please try again.");
+    } finally {
+      clearInterval(aiProgressRef.current!);
+      setGenerating(false);
+    }
+  }
+
+  async function handleSavePlan() {
+    if (!pendingPlanData) return;
+    setSavingPlan(true);
+    setAiError("");
+    try {
+      const res  = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planData: pendingPlanData }) });
       const data = await res.json();
       if (data.plan) {
-        setPlan(data.plan);
-        setAiReasoning(data.reasoning ?? "");
+        const [refreshedPlan, refreshedPlans] = await Promise.all([
+          fetch("/api/plan").then((r) => r.json()),
+          fetch("/api/plans").then((r) => r.json()),
+        ]);
+        setPlan(refreshedPlan.plan ?? []);
+        if (refreshedPlan.activePlan?.id) {
+          setActivePlanId(refreshedPlan.activePlan.id);
+          setPlanDataCache((prev) => ({ ...prev, [refreshedPlan.activePlan.id]: refreshedPlan.plan ?? [] }));
+        }
+        setTrainingPlans(refreshedPlans.plans ?? []);
+        setAiSuccess(true);
+        setPendingPlanData(null);
+        setTimeout(() => { setShowAiInput(false); setAiSuccess(false); setAiMessages([]); setAiInput(""); setAiError(""); }, 2000);
+      } else {
+        setAiError(data.error || "Failed to save plan. Please try again.");
       }
+    } catch {
+      setAiError("Network error. Please try again.");
     } finally {
-      setGenerating(false);
-      setShowAiInput(false);
+      setSavingPlan(false);
     }
+  }
+
+  async function handleAiChat(text: string) {
+    if (!text.trim() || aiChatLoading) return;
+    setAiInput("");
+    const userMsg = { role: "user" as const, content: text.trim() };
+    const newMessages = [...aiMessages, userMsg];
+    setAiMessages(newMessages);
+    setAiChatLoading(true);
+    try {
+      const res = await fetch("/api/plan/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMessages }),
+      });
+      const reply = await res.text();
+      setAiMessages((prev) => [...prev, { role: "ai", content: reply || "Sorry, something went wrong." }]);
+    } catch {
+      setAiMessages((prev) => [...prev, { role: "ai", content: "Sorry, something went wrong." }]);
+    } finally {
+      setAiChatLoading(false);
+    }
+  }
+
+  function toggleAiMic() {
+    if (aiRecording) {
+      aiRecognitionRef.current?.stop();
+      setAiRecording(false);
+      return;
+    }
+    const SR = typeof window !== "undefined"
+      ? ((window as unknown as Record<string, unknown>).SpeechRecognition || (window as unknown as Record<string, unknown>).webkitSpeechRecognition)
+      : null;
+    if (!SR) return;
+    const textBeforeRecording = aiInput;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = new (SR as any)();
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = "en-AU";
+    r.onresult = (e: { results: { [i: number]: { [j: number]: { transcript: string } } } }) => {
+      let full = "";
+      for (let i = 0; i < Object.keys(e.results).length; i++) full += e.results[i][0].transcript;
+      setAiInput((textBeforeRecording ? textBeforeRecording + " " : "") + full);
+    };
+    r.onerror = () => setAiRecording(false);
+    r.onend = () => setAiRecording(false);
+    r.start();
+    aiRecognitionRef.current = r;
+    setAiRecording(true);
+  }
+
+  async function handleResetPreview() {
+    setPendingPlanData(null);
+    setAiMessages([{ role: "ai", content: "Let's build your program. What do you want to focus on this block — strength, size, both? And how many days per week are you training?" }]);
+    const data = await fetch("/api/plan").then((r) => r.json());
+    setPlan(data.plan ?? []);
   }
 
   if (pageLoading) {
@@ -371,7 +553,7 @@ export default function PlanPage() {
   return (
     <div style={{ height: "100vh", background: "#000", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", display: "flex", flexDirection: "column" }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet" />
-      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes typingDot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}`}</style>
 
       {/* Header */}
       <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #111", flexShrink: 0 }}>
@@ -412,7 +594,7 @@ export default function PlanPage() {
         </div>
 
         {/* ── MAIN CONTENT ── */}
-        <div style={{ flex: 1, overflowY: "auto", paddingBottom: 80 }}>
+        <div style={{ flex: 1, overflowY: "auto", paddingBottom: 100 }}>
           {planSwitching && (
             <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 0" }}>
               <div style={{ width: 16, height: 16, border: "2px solid #222", borderTopColor: "#FF5F1F", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
@@ -489,40 +671,95 @@ export default function PlanPage() {
           <div style={{ padding: "14px 14px 0" }}>
             <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 18, marginBottom: 14 }}>
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 10px" }}>AI PLAN BUILDER</p>
-              <p style={{ fontSize: 13, color: "#666", marginBottom: 12, lineHeight: 1.5 }}>Generates a personalised 2-week rotating plan based on your profile, goals, and lifestyle.</p>
               {generating ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", color: "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1.5 }}>
-                  <div style={{ width: 14, height: 14, border: "2px solid #555", borderTopColor: "#999", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                  GENERATING...
+                <div style={{ padding: "10px 0 4px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: "#aaa", fontFamily: "'Barlow', sans-serif", lineHeight: 1.4 }}>{aiProgress.msg}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#FF5F1F", fontFamily: "'Barlow Condensed', sans-serif", marginLeft: 10, flexShrink: 0 }}>{aiProgress.pct}%</span>
+                  </div>
+                  <div style={{ height: 5, background: "#2a2a2a", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${aiProgress.pct}%`, background: "#FF5F1F", borderRadius: 3, transition: "width 0.6s ease" }} />
+                  </div>
+                </div>
+              ) : aiSuccess ? (
+                <div style={{ textAlign: "center", padding: "10px 0" }}>
+                  <div style={{ fontSize: 36, marginBottom: 6 }}>✅</div>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 22, color: "#22C55E" }}>PLAN BUILT!</div>
+                  <p style={{ fontSize: 13, color: "#666", marginTop: 6 }}>Your programme is ready below.</p>
                 </div>
               ) : showAiInput ? (
                 <>
-                  <textarea
-                    autoFocus
-                    value={aiInstructions}
-                    onChange={(e) => setAiInstructions(e.target.value)}
-                    placeholder="Tell the AI what you want — e.g. focus on legs, train 5 days, more upper body volume..."
-                    rows={3}
-                    style={{ width: "100%", background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #FF5F1F", borderRadius: 10, padding: "10px 14px", fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: "none", resize: "none", marginBottom: 10, boxSizing: "border-box" }}
-                  />
-                  <div style={{ display: "flex", gap: 8 }}>
+                  {/* Chat messages */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12, maxHeight: 220, overflowY: "auto" }}>
+                    {aiMessages.map((msg, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
+                        <div style={{ maxWidth: "85%", background: msg.role === "user" ? "#FF5F1F" : "#1E1E1E", border: msg.role === "ai" ? "1px solid #333" : "none", borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px", padding: "9px 13px", fontSize: 13, color: "#F5F5F5", lineHeight: 1.5 }}>
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))}
+                    {aiChatLoading && (
+                      <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                        <div style={{ background: "#1E1E1E", border: "1px solid #333", borderRadius: "14px 14px 14px 4px", padding: "10px 14px", display: "flex", gap: 4, alignItems: "center" }}>
+                          {[0, 1, 2].map((i) => (
+                            <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#666", animation: `typingDot 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Input row */}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "flex-end" }}>
+                    <textarea
+                      ref={aiTextareaRef}
+                      value={aiInput}
+                      onChange={(e) => setAiInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && aiInput.trim()) { e.preventDefault(); handleAiChat(aiInput); } }}
+                      onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 200)}px`; }}
+                      placeholder="Reply to your coach…"
+                      rows={1}
+                      style={{ flex: 1, background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #333", borderRadius: 10, padding: "10px 13px", fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: "none", resize: "none", minHeight: 44, maxHeight: 200, overflowY: "auto", lineHeight: 1.5 }}
+                    />
                     <button
-                      onClick={handleAiGenerate}
-                      style={{ flex: 1, minHeight: 44, borderRadius: 50, border: "none", background: "#FF5F1F", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, cursor: "pointer" }}
+                      onClick={toggleAiMic}
+                      style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${aiRecording ? "#EF444455" : "#333"}`, background: aiRecording ? "#EF444422" : "#1E1E1E", color: aiRecording ? "#EF4444" : "#666", fontSize: 17, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
                     >
-                      ⚡ GENERATE
+                      🎙
                     </button>
                     <button
-                      onClick={() => { setShowAiInput(false); setAiInstructions(""); }}
-                      style={{ minHeight: 44, padding: "0 16px", borderRadius: 50, border: "1px solid #333", background: "transparent", color: "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, cursor: "pointer" }}
+                      onClick={() => handleAiChat(aiInput)}
+                      disabled={!aiInput.trim() || aiChatLoading}
+                      style={{ width: 44, height: 44, borderRadius: 10, border: "none", background: aiInput.trim() ? "#FF5F1F" : "#333", color: aiInput.trim() ? "#fff" : "#555", fontSize: 18, cursor: aiInput.trim() ? "pointer" : "not-allowed", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
                     >
-                      ✕
+                      ↑
                     </button>
                   </div>
+                  {/* Save / Refine / Build / Cancel */}
+                  {aiError && (
+                    <div style={{ background: "#EF444418", border: "1px solid #EF444444", borderRadius: 10, padding: "10px 13px", marginBottom: 10, fontSize: 13, color: "#EF4444", lineHeight: 1.5 }}>
+                      {aiError}
+                    </div>
+                  )}
+                  {(
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={handleAiGenerate}
+                        style={{ flex: 1, minHeight: 44, borderRadius: 50, border: "none", background: "#FF5F1F", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, cursor: "pointer" }}
+                      >
+                        {pendingPlanData ? "🔄 REGENERATE" : "⚡ BUILD MY PLAN"}
+                      </button>
+                      <button
+                        onClick={() => { setShowAiInput(false); setAiMessages([]); setAiInput(""); setAiSuccess(false); setPendingPlanData(null); }}
+                        style={{ minHeight: 44, padding: "0 16px", borderRadius: 50, border: "1px solid #333", background: "transparent", color: "#666", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, cursor: "pointer" }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
                 </>
               ) : (
                 <button
-                  onClick={() => setShowAiInput(true)}
+                  onClick={() => { setAiMessages([{ role: "ai", content: "Let's build your program. What do you want to focus on this block — strength, size, both? And how many days per week are you training?" }]); setAiInput(""); setAiSuccess(false); setShowAiInput(true); }}
                   style={{ width: "100%", padding: "12px 0", borderRadius: 50, border: "none", background: "#FF5F1F", color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, cursor: "pointer", transition: "background 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
                 >
                   ⚡ GENERATE MY PLAN WITH AI
@@ -546,6 +783,32 @@ export default function PlanPage() {
               ))}
             </div>
           </div>
+
+          {/* Preview banner */}
+          {pendingPlanData && (
+            <div style={{ padding: "0 14px 14px" }}>
+              <div style={{ background: "#FF5F1F12", border: "1px solid #FF5F1F44", borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: 1.5, color: "#FF5F1F", marginBottom: 12 }}>
+                  PREVIEW — NOT SAVED YET
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={handleSavePlan}
+                    disabled={savingPlan}
+                    style={{ flex: 1, minHeight: 48, borderRadius: 50, border: "none", background: savingPlan ? "#333" : "#22C55E", color: savingPlan ? "#555" : "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, cursor: savingPlan ? "not-allowed" : "pointer" }}
+                  >
+                    {savingPlan ? "SAVING..." : "✅ SAVE THIS PLAN"}
+                  </button>
+                  <button
+                    onClick={handleResetPreview}
+                    style={{ minHeight: 48, padding: "0 18px", borderRadius: 50, border: "1px solid #333", background: "transparent", color: "#aaa", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, cursor: "pointer" }}
+                  >
+                    🔄 Start Over
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Day cards */}
           <div style={{ padding: "0 14px", display: "flex", flexDirection: "column", gap: 8 }}>

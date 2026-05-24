@@ -5,77 +5,211 @@ import { prisma } from "@/lib/prisma";
 const anthropic = new Anthropic();
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const VALID_TYPES = ["push", "pull", "legs", "upper", "lower", "arms", "core", "cardio", "stretch", "rest"];
+const VALID_TYPES = ["push", "pull", "legs", "upper", "lower", "arms", "core", "cardio", "stretch", "core-stretch", "rest"];
+
+type CustomExercise = { name: string; sets: number; reps: string; bodyPart: string };
+type DayPlan = { typeId: string; customExercises?: CustomExercise[] };
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  console.log("[plan/generate] ANTHROPIC_API_KEY defined:", !!apiKey);
-  console.log("[plan/generate] ANTHROPIC_API_KEY first 10 chars:", apiKey ? apiKey.slice(0, 10) : "undefined");
-
   const userId = req.cookies.get("gymiq-user")?.value;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => ({}));
-  const additionalInstructions: string = body.additionalInstructions ?? "";
-
-  const profile = await prisma.profile.findUnique({ where: { userId } });
-
-  const profileText = profile
-    ? `Experience: ${profile.experience}. Goals: ${JSON.stringify(profile.goals)}. Occupation: ${profile.occupation} (${profile.physicalDemand}). Work hours: ${profile.workHours}. Gym time: ${profile.gymTime}. Injuries/limitations: ${profile.injuries || "none"}. Weak points: ${JSON.stringify(profile.weakPoints)}.`
-    : "No profile set — assume intermediate, general fitness goals, desk job, no injuries.";
-
-  let raw: string;
   try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      system: `You are an expert strength and conditioning coach. You create personalised 2-week rotating gym programs.
-Session types you may assign: push, pull, legs, upper, lower, arms, core, cardio, stretch, rest.
-You MUST respond with ONLY valid JSON — no prose, no markdown, no code fences.
-The JSON must have exactly this shape:
-{
-  "week1": { "Mon": "push", "Tue": "pull", "Wed": "rest", "Thu": "legs", "Fri": "push", "Sat": "cardio", "Sun": "rest" },
-  "week2": { "Mon": "pull", "Tue": "push", "Wed": "legs", "Thu": "rest", "Fri": "upper", "Sat": "stretch", "Sun": "rest" },
-  "reasoning": "One sentence explaining the structure."
-}`,
-      messages: [{
-        role: "user",
-        content: `Build a 2-week rotating plan for this athlete. ${profileText}${additionalInstructions ? ` Additional instructions from the athlete: ${additionalInstructions}` : ""}`,
-      }],
-    });
-    raw = message.content[0].type === "text" ? message.content[0].text.trim() : "{}";
-  } catch (error) {
-    console.error("[plan/generate] Anthropic error message:", (error as Error)?.message);
-    console.error("[plan/generate] Anthropic error full object:", error);
-    return NextResponse.json({ error: "AI unavailable" }, { status: 500 });
-  }
+    const body = await req.json().catch(() => ({}));
+    const additionalInstructions: string = body.additionalInstructions ?? "";
+    const conversationHistory: { role: string; content: string }[] = body.conversationHistory ?? [];
+    const dryRun: boolean = body.dryRun ?? false;
+    const incomingPlanData: { week1?: Record<string, DayPlan>; week2?: Record<string, DayPlan>; reasoning?: string } | null = body.planData ?? null;
 
-  let parsed: { week1?: Record<string, string>; week2?: Record<string, string>; reasoning?: string };
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return NextResponse.json({ error: "AI returned invalid JSON", raw }, { status: 500 });
-  }
+    const [profile, allExercises] = await Promise.all([
+      prisma.profile.findUnique({ where: { userId } }),
+      prisma.exercise.findMany({ select: { name: true, bodyPart: true }, orderBy: { bodyPart: "asc" } }),
+    ]);
 
-  const upserts: Promise<unknown>[] = [];
-
-  for (const week of ["1", "2"] as const) {
-    const weekData = week === "1" ? parsed.week1 : parsed.week2;
-    if (!weekData) continue;
-    for (const day of DAYS) {
-      const typeId = weekData[day];
-      if (!typeId || !VALID_TYPES.includes(typeId)) continue;
-      const existing = await prisma.workoutPlan.findFirst({ where: { userId, day, week } });
-      const upsert = existing
-        ? prisma.workoutPlan.update({ where: { id: existing.id }, data: { typeId } })
-        : prisma.workoutPlan.create({ data: { userId, day, week, typeId, exercises: [] } });
-      upserts.push(upsert);
+    const exercisesByBodyPart: Record<string, string[]> = {};
+    for (const ex of allExercises) {
+      if (!exercisesByBodyPart[ex.bodyPart]) exercisesByBodyPart[ex.bodyPart] = [];
+      exercisesByBodyPart[ex.bodyPart].push(ex.name);
     }
+    const exerciseList = Object.entries(exercisesByBodyPart)
+      .map(([bp, names]) => `${bp}: ${names.join(", ")}`)
+      .join("\n");
+    console.log("Exercises fetched from DB:", allExercises.length);
+    console.log("Sample exercises:", allExercises.slice(0, 5).map((e) => e.name));
+
+    const profileText = profile
+      ? [
+          `Name: ${profile.name || "unknown"}.`,
+          `Age: ${profile.age || "unknown"}.`,
+          `Bodyweight: ${profile.weight ? `${profile.weight}kg` : "unknown"}.`,
+          `Experience: ${profile.experience || "intermediate"}.`,
+          `Goals: ${Array.isArray(profile.goals) && (profile.goals as string[]).length ? (profile.goals as string[]).join(", ") : "general fitness"}.`,
+          `Occupation: ${profile.occupation || "unknown"} (${profile.physicalDemand || "unknown physical demand"}).`,
+          `Gym time: ${profile.gymTime || "unknown"}.`,
+          `Injuries: ${profile.injuries || "none"}.`,
+          `Weak points: ${Array.isArray(profile.weakPoints) && (profile.weakPoints as string[]).length ? (profile.weakPoints as string[]).join(", ") : "none"}.`,
+        ].join(" ")
+      : "Intermediate lifter, general fitness, no injuries.";
+
+    let parsed: { week1?: Record<string, DayPlan>; week2?: Record<string, DayPlan>; reasoning?: string };
+
+    if (incomingPlanData) {
+      parsed = incomingPlanData;
+    } else {
+      let raw: string;
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 55000)
+        );
+        const message = await Promise.race([
+          anthropic.messages.create({
+            model: "claude-sonnet-4-6",
+            max_tokens: 4096,
+            system: `You are an experienced personal trainer. Build a 2-week gym programme as JSON following every rule below without exception.
+
+LISTENING RULES — NON NEGOTIABLE:
+- Read every word the client says before building anything.
+- Extract every specific request and list them numbered before building.
+- If the client says 5 chest exercises — give exactly 5. Not 4. Not 6. Exactly 5.
+- If the client says 2 tricep exercises — give exactly 2.
+- If the client says no shoulder isolation — do not include lateral raises, front raises, or any direct shoulder work.
+- If the client says more legs — give at least 2 leg days per week.
+- Never ignore a specific instruction. Never substitute a request with something similar without explaining why.
+
+EXERCISE PROGRAMMING RULES — NON NEGOTIABLE:
+- Never place two exercises with the same primary movement pattern back to back.
+- Horizontal press movements (Bench Press, DB Flat Press, Push-ups) must never follow each other directly.
+- Incline press and flat press are the same pattern at a different angle — never back to back.
+- Squat and Hack Squat are the same pattern — never back to back.
+- Deadlift and Romanian Deadlift are both hip hinge — never back to back.
+- Always order exercises: heaviest compound first, moderate compound second, isolation exercises last.
+- Vary equipment within a session — mix barbell, dumbbell, cable, and machine. Do not use one equipment type for every exercise.
+- Vary angles — if you include flat press also include incline or cable work, not another flat press variant.
+- Sessions with 5+ exercises for one muscle group must use at least 3 different movement patterns or equipment types.
+
+WEEKLY PROGRAMMING RULES — NON NEGOTIABLE:
+- Never schedule two sessions that heavily work the same muscle group on consecutive days.
+- Two leg days must have at least one rest, core, or upper body day between them.
+- Push and Pull can be consecutive days as they work opposing muscles — this is acceptable.
+- Core and stretch sessions are excellent recovery days — place them between heavy sessions.
+- Arms sessions work best after push or pull days, never before a heavy push or pull session.
+- Ensure adequate recovery — legs need at least one full day before the next leg session.
+- Weekly flow must be logical: heavy, moderate, light, repeat.
+
+SESSION STRUCTURE RULES — GENERAL PRINCIPLES:
+- PUSH DAY: Chest is the primary muscle. Triceps are secondary. Direct shoulder isolation only if the client requests it.
+- PULL DAY: Back is the primary muscle. Biceps are secondary. Direct shoulder work only if requested.
+- LEGS DAY: Always train both quads and hamstrings unless the client says otherwise. Include calf work unless told not to.
+- ARMS DAY: Balance bicep and tricep volume equally.
+- UPPER BODY DAY: Balance chest and back volume. Include shoulders only if requested.
+- CORE STRETCH DAY: Mix core strengthening exercises with mobility and stretching tailored to the client's heaviest muscle groups that week.
+- ALWAYS: The client's specific requests override these general principles.
+
+WEEK 1 vs WEEK 2 RULES:
+- Week 1 and Week 2 must not use identical exercise lists for the same session type.
+- Vary the stimulus between weeks — swap at least one exercise per session, or change rep ranges, or change equipment.
+- The session types (push/pull/legs etc.) can repeat across weeks but the specific exercises must differ.
+
+MANDATORY BUILD PROCESS:
+- Step 1: Read the entire conversation. List every specific client instruction numbered.
+- Step 2: Plan the weekly structure — decide which session type goes on each day before selecting exercises.
+- Step 3: For each session select exercises following all programming rules above.
+- Step 4: Before finalising, check each session against the client's specific instructions. Adjust if anything is missing or wrong.
+
+Use ONLY the exercises listed below. Choose 4-6 exercises per training session. Rest/stretch days use [].
+JSON shape: {"week1":{"Mon":{"typeId":"push","customExercises":[{"name":"ExerciseName","sets":4,"reps":"8-10","bodyPart":"bodypart"}]},...},"week2":{...},"reasoning":"Numbered instruction list and confirmation each was addressed."}
+Valid typeId: push, pull, legs, upper, lower, arms, core, cardio, stretch, core-stretch, rest.
+
+Return ONLY valid JSON. No explanation. No markdown. Start with { end with }
+
+EXERCISES — use only these, no others:
+${exerciseList}`,
+            messages: [{
+              role: "user",
+              content: `Client profile: ${profileText}\n\n${conversationHistory.length > 0 ? `CONVERSATION:\n${conversationHistory.map((m) => `${m.role === "user" ? "CLIENT" : "COACH"}: ${m.content}`).join("\n")}\n\nBuild a plan that follows every instruction above.` : `Build a standard 2-week plan for this client.${additionalInstructions ? ` ${additionalInstructions}` : ""}`}`,
+            }],
+          }),
+          timeoutPromise,
+        ]) as Awaited<ReturnType<typeof anthropic.messages.create>>;
+        raw = message.content[0].type === "text" ? message.content[0].text.trim() : "{}";
+      } catch (error) {
+        const msg = (error as Error)?.message ?? "";
+        if (msg === "timeout") {
+          console.warn("[plan/generate] AI timed out");
+          return NextResponse.json({ error: "Generation took too long — please try again. Try shortening your instructions or breaking them into fewer requests." }, { status: 504 });
+        } else {
+          console.error("[plan/generate] Anthropic error:", msg);
+          return NextResponse.json({ error: msg || "AI unavailable" }, { status: 500 });
+        }
+      }
+
+      console.log("RAW AI RESPONSE:", raw);
+      raw = raw.replace(/```json|```/g, "").trim();
+      // Always extract from first { to last } to discard any pre-JSON reasoning text
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error("[plan/generate] no JSON object found in response. raw:", raw);
+        return NextResponse.json({ error: "AI returned invalid JSON — please try again." }, { status: 500 });
+      }
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch {
+        console.error("[plan/generate] JSON.parse failed. raw:", jsonMatch[0]);
+        return NextResponse.json({ error: "AI returned invalid JSON — please try again." }, { status: 500 });
+      }
+    }
+
+    for (const [weekKey, weekData] of [["week1", parsed.week1], ["week2", parsed.week2]] as [string, Record<string, DayPlan> | undefined][]) {
+      if (!weekData) continue;
+      for (const [day, dayPlan] of Object.entries(weekData)) {
+        if (!dayPlan || ["rest", "stretch"].includes(dayPlan.typeId)) continue;
+        if (Array.isArray(dayPlan.customExercises) && dayPlan.customExercises.length > 0) {
+          console.log(`[plan/generate] ${weekKey} ${day} (${dayPlan.typeId}) bodyParts:`, dayPlan.customExercises.map((e) => e.bodyPart));
+        }
+        if (!Array.isArray(dayPlan.customExercises) || dayPlan.customExercises.length === 0) {
+          console.error(`[plan/generate] ${weekKey} ${day} (${dayPlan.typeId}) returned no customExercises — AI ignored instructions`);
+        }
+      }
+    }
+
+    if (dryRun) {
+      return NextResponse.json({ parsed, reasoning: parsed.reasoning ?? "" });
+    }
+
+    let activePlan = await prisma.trainingPlan.findFirst({ where: { userId, isActive: true } });
+    if (!activePlan) {
+      await prisma.trainingPlan.updateMany({ where: { userId }, data: { isActive: false } });
+      activePlan = await prisma.trainingPlan.create({
+        data: { userId, name: `AI Plan — ${new Date().toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}`, isActive: true },
+      });
+    }
+
+    const upserts: Promise<unknown>[] = [];
+
+    for (const week of ["1", "2"] as const) {
+      const weekData = week === "1" ? parsed.week1 : parsed.week2;
+      if (!weekData) continue;
+      for (const day of DAYS) {
+        const dayPlan = weekData[day];
+        if (!dayPlan) continue;
+        const typeId = dayPlan.typeId;
+        if (!typeId || !VALID_TYPES.includes(typeId)) continue;
+        const exercises = dayPlan.customExercises ?? [];
+        const existing = await prisma.workoutPlan.findFirst({ where: { trainingPlanId: activePlan.id, day, week } });
+        const upsert = existing
+          ? prisma.workoutPlan.update({ where: { id: existing.id }, data: { typeId, exercises } })
+          : prisma.workoutPlan.create({ data: { userId, trainingPlanId: activePlan.id, day, week, typeId, exercises } });
+        upserts.push(upsert);
+      }
+    }
+
+    await Promise.all(upserts);
+
+    const plan = await prisma.workoutPlan.findMany({ where: { trainingPlanId: activePlan.id }, orderBy: [{ week: "asc" }, { createdAt: "asc" }] });
+
+    return NextResponse.json({ plan, reasoning: parsed.reasoning ?? "", activePlan });
+  } catch (error) {
+    console.error("[plan/generate] unexpected error:", error);
+    return NextResponse.json({ error: "Server error — please try again." }, { status: 500 });
   }
-
-  await Promise.all(upserts);
-
-  const plan = await prisma.workoutPlan.findMany({ where: { userId }, orderBy: [{ week: "asc" }, { createdAt: "asc" }] });
-
-  return NextResponse.json({ plan, reasoning: parsed.reasoning ?? "" });
 }
