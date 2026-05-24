@@ -4,6 +4,7 @@ import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import { useTheme } from "@/lib/ThemeContext";
 
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard" },
@@ -27,12 +28,16 @@ type Message = { role: "user" | "assistant"; content: string };
 export default function CoachPage() {
   const router = useRouter();
   const pathname = usePathname();
+  const { isDark } = useTheme();
   const [pageLoading, setPageLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [micUnsupported, setMicUnsupported] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<{ stop(): void } | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -43,7 +48,7 @@ export default function CoachPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streaming]);
 
   async function sendMessage(text: string) {
     if (!text.trim() || streaming) return;
@@ -53,9 +58,6 @@ export default function CoachPage() {
     setInput("");
     setStreaming(true);
 
-    // Add empty assistant message to stream into
-    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
-
     try {
       const res = await fetch("/api/coach", {
         method: "POST",
@@ -63,32 +65,41 @@ export default function CoachPage() {
         body: JSON.stringify({ messages: newMessages }),
       });
 
-      if (!res.body) throw new Error("No response body");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        const finalText = accumulated;
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: finalText };
-          return updated;
-        });
-      }
+      const reply = await res.text();
+      setMessages((prev) => [...prev, { role: "assistant", content: reply || "Sorry, something went wrong. Please try again." }]);
     } catch {
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = { role: "assistant", content: "Sorry, something went wrong. Please try again." };
-        return updated;
-      });
+      setMessages((prev) => [...prev, { role: "assistant", content: "Sorry, something went wrong. Please try again." }]);
     } finally {
       setStreaming(false);
     }
+  }
+
+  function toggleMic() {
+    if (recording) {
+      recognitionRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+    const SR = typeof window !== "undefined"
+      ? ((window as unknown as Record<string, unknown>).SpeechRecognition || (window as unknown as Record<string, unknown>).webkitSpeechRecognition)
+      : null;
+    if (!SR) { setMicUnsupported(true); setTimeout(() => setMicUnsupported(false), 3000); return; }
+    const textBeforeRecording = input;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = new (SR as any)();
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = "en-AU";
+    r.onresult = (e: { results: { [i: number]: { [j: number]: { transcript: string } } } }) => {
+      let full = "";
+      for (let i = 0; i < Object.keys(e.results).length; i++) full += e.results[i][0].transcript;
+      setInput((textBeforeRecording ? textBeforeRecording + " " : "") + full);
+    };
+    r.onerror = () => setRecording(false);
+    r.onend = () => setRecording(false);
+    r.start();
+    recognitionRef.current = r;
+    setRecording(true);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -100,7 +111,7 @@ export default function CoachPage() {
 
   if (pageLoading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: "var(--page-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         <div style={{ width: 32, height: 32, border: "3px solid #222", borderTopColor: "#FF5F1F", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       </div>
@@ -108,12 +119,12 @@ export default function CoachPage() {
   }
 
   return (
-    <div style={{ height: "100vh", background: "#000", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: "100vh", background: "var(--page-bg)", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif", display: "flex", flexDirection: "column" }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet" />
-      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}`}</style>
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes blink{0%,100%{opacity:1}50%{opacity:0}} @keyframes typingDot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}} @keyframes micPulse{0%,100%{box-shadow:0 0 0 0 #FF5F1F55}60%{box-shadow:0 0 0 8px #FF5F1F00}}`}</style>
 
       {/* Header */}
-      <div style={{ padding: "20px 20px 12px", borderBottom: "1px solid #111", flexShrink: 0 }}>
+      <div style={{ padding: "20px 20px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 2px" }}>YOUR AI</p>
         <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 36, lineHeight: 1, margin: 0 }}>COACH</h1>
       </div>
@@ -130,13 +141,14 @@ export default function CoachPage() {
                 key={p}
                 onClick={() => sendMessage(p)}
                 style={{
-                  background: "#161616", border: "1px solid #2a2a2a", borderRadius: 12,
-                  padding: "13px 16px", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif",
+                  background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 12,
+                  borderLeft: isDark ? "1px solid var(--border)" : "4px solid #FF5F1F",
+                  padding: "13px 16px", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif",
                   fontSize: 14, fontWeight: 500, cursor: "pointer", textAlign: "left",
                   transition: "border-color 0.15s",
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#FF5F1F55")}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
               >
                 {p}
               </button>
@@ -162,12 +174,12 @@ export default function CoachPage() {
               style={{
                 maxWidth: "82%",
                 background: msg.role === "user" ? "#FF5F1F" : "#161616",
-                border: msg.role === "assistant" ? "1px solid #222" : "none",
+                border: msg.role === "assistant" ? "1px solid var(--border)" : "none",
                 borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
                 padding: "10px 14px",
                 fontSize: 14,
                 lineHeight: 1.6,
-                color: "#F5F5F5",
+                color: "var(--text-primary)",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}
@@ -179,57 +191,91 @@ export default function CoachPage() {
           </div>
         ))}
 
+        {streaming && (
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: "#FF5F1F22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0, marginRight: 8, marginTop: 2 }}>
+              🤖
+            </div>
+            <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: "16px 16px 16px 4px", padding: "12px 16px", display: "flex", gap: 5, alignItems: "center" }}>
+              {[0, 1, 2].map((i) => (
+                <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#666", animation: `typingDot 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
 
       {/* Input area */}
-      <div style={{ padding: "12px 16px 80px", borderTop: "1px solid #111", flexShrink: 0, display: "flex", gap: 10, alignItems: "flex-end" }}>
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask your coach…"
-          disabled={streaming}
-          rows={1}
-          style={{
-            flex: 1, background: "#161616", color: "#F5F5F5",
-            border: "1px solid #333", borderRadius: 12,
-            padding: "10px 14px", fontSize: 14,
-            fontFamily: "'Barlow', sans-serif", outline: "none",
-            resize: "none", maxHeight: 120, overflowY: "auto",
-            lineHeight: 1.5,
-          }}
-          onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")}
-          onBlur={(e) => (e.target.style.borderColor = "#333")}
-          onInput={(e) => {
-            const el = e.currentTarget;
-            el.style.height = "auto";
-            el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-          }}
-        />
-        <button
-          onClick={() => sendMessage(input)}
-          disabled={!input.trim() || streaming}
-          style={{
-            width: 42, height: 42, borderRadius: 12, border: "none", flexShrink: 0,
-            background: !input.trim() || streaming ? "#222" : "#FF5F1F",
-            color: !input.trim() || streaming ? "#555" : "#fff",
-            fontSize: 18, cursor: !input.trim() || streaming ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "background 0.2s",
-          }}
-        >
-          {streaming ? (
-            <div style={{ width: 16, height: 16, border: "2px solid #444", borderTopColor: "#888", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-          ) : "↑"}
-        </button>
+      <div style={{ padding: "12px 16px 100px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+        {micUnsupported && (
+          <div style={{ fontSize: 12, color: "#888", textAlign: "center", marginBottom: 8 }}>
+            Use Chrome or Safari for voice input
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask your coach…"
+            disabled={streaming}
+            rows={1}
+            style={{
+              flex: 1, background: "var(--card-bg)", color: "var(--text-primary)",
+              border: "1px solid var(--border)", borderRadius: 12,
+              padding: "10px 14px", fontSize: 14,
+              fontFamily: "'Barlow', sans-serif", outline: "none",
+              resize: "none", maxHeight: 120, overflowY: "auto",
+              lineHeight: 1.5,
+            }}
+            onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")}
+            onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+            }}
+          />
+          <button
+            onClick={toggleMic}
+            style={{
+              width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+              border: `1px solid ${recording ? "#FF5F1F66" : "#333"}`,
+              background: recording ? "#FF5F1F22" : "#161616",
+              color: recording ? "#FF5F1F" : "#666",
+              fontSize: 18, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              animation: recording ? "micPulse 1.4s ease-out infinite" : "none",
+            }}
+          >
+            🎙
+          </button>
+          <button
+            onClick={() => sendMessage(input)}
+            disabled={!input.trim() || streaming}
+            style={{
+              width: 44, height: 44, borderRadius: 12, border: "none", flexShrink: 0,
+              background: !input.trim() || streaming ? "#222" : "#FF5F1F",
+              color: !input.trim() || streaming ? "#555" : "#fff",
+              fontSize: 18, cursor: !input.trim() || streaming ? "not-allowed" : "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "background 0.2s",
+            }}
+          >
+            {streaming ? (
+              <div style={{ width: 16, height: 16, border: "2px solid #444", borderTopColor: "#888", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+            ) : "↑"}
+          </button>
+        </div>
       </div>
 
       {/* Bottom Nav */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 99,
-        background: "#0A0A0A", borderTop: "1px solid #222",
+        background: "var(--card-bg)", borderTop: "1px solid var(--border)",
         display: "flex", justifyContent: "space-around",
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
       }}>

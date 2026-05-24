@@ -43,6 +43,22 @@ const PHYSICAL_DEMAND_OPTIONS = [
   "Mixed",
 ];
 const WEAK_POINT_OPTIONS = ["Chest", "Back", "Shoulders", "Arms", "Legs", "Core"];
+const TIMEZONE_OPTIONS = [
+  { value: "Australia/Melbourne", label: "Melbourne / Sydney (AEST)" },
+  { value: "Australia/Sydney",    label: "Sydney (AEDT)" },
+  { value: "Australia/Brisbane",  label: "Brisbane (AEST, no DST)" },
+  { value: "Australia/Adelaide",  label: "Adelaide (ACST)" },
+  { value: "Australia/Perth",     label: "Perth (AWST)" },
+  { value: "Australia/Darwin",    label: "Darwin (ACST, no DST)" },
+  { value: "Australia/Hobart",    label: "Hobart (AEST)" },
+  { value: "Pacific/Auckland",    label: "Auckland (NZST)" },
+  { value: "Asia/Singapore",      label: "Singapore (SGT)" },
+  { value: "Europe/London",       label: "London (GMT/BST)" },
+  { value: "America/New_York",    label: "New York (ET)" },
+  { value: "America/Los_Angeles", label: "Los Angeles (PT)" },
+];
+
+type ProfileNote = { id: string; content: string; createdAt: string };
 
 type ProfileForm = {
   name: string;
@@ -56,6 +72,7 @@ type ProfileForm = {
   sleepTime: string;
   gymTime: string;
   programStartDate: string;
+  timezone: string;
   injuries: string;
   goals: string[];
   weakPoints: string[];
@@ -64,7 +81,7 @@ type ProfileForm = {
 const EMPTY: ProfileForm = {
   name: "", age: "", weight: "", experience: "", occupation: "",
   physicalDemand: "", workHours: "", wakeTime: "", sleepTime: "",
-  gymTime: "", programStartDate: "", injuries: "", goals: [], weakPoints: [],
+  gymTime: "", programStartDate: "", timezone: "Australia/Melbourne", injuries: "", goals: [], weakPoints: [],
 };
 
 export default function ProfilePage() {
@@ -76,6 +93,12 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [goalInput, setGoalInput] = useState("");
 
+  // ── Security fields ──
+  const [username, setUsername]         = useState("");
+  const [nickname, setNickname]         = useState("");
+  const [password, setPassword]         = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
   // Dictation
   const [transcript, setTranscript] = useState("");
   const [recording, setRecording] = useState(false);
@@ -83,10 +106,15 @@ export default function ProfilePage() {
   const [speechError, setSpeechError] = useState("");
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
+  // Notes
+  const [notes, setNotes] = useState<ProfileNote[]>([]);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
+  const [interpretSummary, setInterpretSummary] = useState("");
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => { if (!r.ok) { router.replace("/"); return null; } return r.json(); })
-      .then((d) => { if (!d) return; setPageLoading(false); })
+      .then((d) => { if (!d) return; setUsername(d.user.username ?? ""); setNickname(d.user.nickname ?? ""); setPageLoading(false); })
       .catch(() => router.replace("/"));
   }, [router]);
 
@@ -109,11 +137,16 @@ export default function ProfilePage() {
           sleepTime:      p.sleepTime      || "",
           gymTime:          p.gymTime          || "",
           programStartDate: p.programStartDate ? new Date(p.programStartDate).toISOString().split("T")[0] : "",
+          timezone:         p.timezone         || "Australia/Melbourne",
           injuries:         p.injuries         || "",
           goals:          Array.isArray(p.goals)      ? p.goals      : [],
           weakPoints:     Array.isArray(p.weakPoints) ? p.weakPoints : [],
         });
       })
+      .catch(() => {});
+    fetch("/api/profile/notes")
+      .then((r) => r.json())
+      .then((d) => setNotes(d.notes ?? []))
       .catch(() => {});
   }, [pageLoading]);
 
@@ -147,12 +180,29 @@ export default function ProfilePage() {
   async function handleSave() {
     setSaving(true);
     try {
-      await fetch("/api/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, weight: parseFloat(form.weight) || 0 }),
-      });
+      const saves: Promise<unknown>[] = [
+        fetch("/api/profile", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, weight: parseFloat(form.weight) || 0 }),
+        }),
+      ];
+      const securityBody: Record<string, string | null> = {};
+      if (username) securityBody.username = username;
+      securityBody.nickname = nickname || null;
+      if (password) securityBody.password = password;
+      if (Object.keys(securityBody).length > 0) {
+        saves.push(
+          fetch("/api/users/me", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(securityBody),
+          })
+        );
+      }
+      await Promise.all(saves);
       setSaved(true);
+      setPassword("");
     } finally {
       setSaving(false);
     }
@@ -213,11 +263,12 @@ export default function ProfilePage() {
   async function handleInterpret() {
     if (!transcript.trim()) return;
     setInterpreting(true);
+    const savedTranscript = transcript;
     try {
       const res = await fetch("/api/profile/interpret", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript }),
+        body: JSON.stringify({ transcript: savedTranscript }),
       });
       const data = await res.json();
       const f = data.fields ?? {};
@@ -236,16 +287,40 @@ export default function ProfilePage() {
         goals:            Array.isArray(f.goals)      ? f.goals      : prev.goals,
         weakPoints:       Array.isArray(f.weakPoints) ? f.weakPoints : prev.weakPoints,
         programStartDate: prev.programStartDate,
+        timezone:         prev.timezone,
       }));
+      const FIELD_LABELS: Record<string, string> = {
+        name: "name", age: "age", weight: "weight", experience: "experience",
+        occupation: "occupation", physicalDemand: "job demand", workHours: "work hours",
+        wakeTime: "wake time", sleepTime: "sleep time", gymTime: "gym time",
+        injuries: "injuries", goals: "goals", weakPoints: "priority areas",
+      };
+      const filled = Object.keys(f).filter((k) => f[k] !== undefined && f[k] !== null && (Array.isArray(f[k]) ? (f[k] as unknown[]).length > 0 : String(f[k]).trim() !== ""));
+      setInterpretSummary(filled.length > 0 ? `Filled in: ${filled.map((k) => FIELD_LABELS[k] ?? k).join(", ")}` : "No fields recognised — try speaking more detail.");
       setSaved(false);
+      fetch("/api/profile/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: savedTranscript }),
+      }).then((r) => r.json()).then((d) => { if (d.note) setNotes((prev) => [d.note, ...prev]); }).catch(() => {});
     } finally {
       setInterpreting(false);
     }
   }
 
+  async function deleteNote(id: string) {
+    setDeletingNoteId(id);
+    try {
+      await fetch(`/api/profile/notes/${id}`, { method: "DELETE" });
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+    } finally {
+      setDeletingNoteId(null);
+    }
+  }
+
   if (pageLoading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: "var(--page-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         <div style={{ width: 32, height: 32, border: "3px solid #222", borderTopColor: "#FF5F1F", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       </div>
@@ -253,7 +328,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#000", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", paddingBottom: 100 }}>
+    <div style={{ minHeight: "100vh", background: "var(--page-bg)", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif", paddingBottom: 100 }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
 
@@ -266,7 +341,7 @@ export default function ProfilePage() {
         </div>
 
         {/* ── DICTATION CARD ── */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 14px" }}>
             VOICE FILL
           </p>
@@ -296,7 +371,7 @@ export default function ProfilePage() {
           )}
 
           {transcript && (
-            <div style={{ background: "#1E1E1E", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#ccc", lineHeight: 1.6, maxHeight: 100, overflowY: "auto" }}>
+            <div style={{ background: "var(--input-bg)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#ccc", lineHeight: 1.6, maxHeight: 100, overflowY: "auto" }}>
               {transcript}
             </div>
           )}
@@ -309,7 +384,7 @@ export default function ProfilePage() {
                 width: "100%", padding: "12px 0", borderRadius: 50,
                 background: interpreting ? "#333" : "#1E1E1E",
                 color: interpreting ? "#555" : "#F5F5F5",
-                border: "1px solid #333",
+                border: "1px solid var(--border)",
                 fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: 1,
                 cursor: interpreting ? "not-allowed" : "pointer",
               } as React.CSSProperties}
@@ -317,11 +392,16 @@ export default function ProfilePage() {
               {interpreting ? "INTERPRETING..." : "⚡ FILL PROFILE FROM TRANSCRIPT"}
             </button>
           )}
+          {interpretSummary && !interpreting && (
+            <div style={{ background: "#22C55E18", border: "1px solid #22C55E44", borderRadius: 10, padding: "10px 14px", marginTop: 8, fontSize: 13, color: "#22C55E", lineHeight: 1.5 }}>
+              {interpretSummary}
+            </div>
+          )}
         </div>
 
-        {/* ── BASICS CARD ── */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
-          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: 0 }}>BASICS</p>
+        {/* ── PERSONAL DETAILS CARD ── */}
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: 0 }}>PERSONAL DETAILS</p>
 
           <Field label="NAME">
             <input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Alex" style={inputStyle} onFocus={focusStyle} onBlur={blurStyle} />
@@ -339,7 +419,7 @@ export default function ProfilePage() {
           <Field label="EXPERIENCE">
             <div style={{ display: "flex", gap: 6 }}>
               {EXPERIENCE_OPTIONS.map((o) => (
-                <button key={o} onClick={() => set("experience", o)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: form.experience === o ? "2px solid #FF5F1F" : "1px solid #333", background: form.experience === o ? "#FF5F1F22" : "#1E1E1E", color: form.experience === o ? "#FF5F1F" : "#666", fontFamily: "'Barlow', sans-serif", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                <button key={o} onClick={() => set("experience", o)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: form.experience === o ? "2px solid #FF5F1F" : "1px solid var(--border)", background: form.experience === o ? "#FF5F1F22" : "#1E1E1E", color: form.experience === o ? "#FF5F1F" : "#666", fontFamily: "'Barlow', sans-serif", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                   {o}
                 </button>
               ))}
@@ -347,8 +427,42 @@ export default function ProfilePage() {
           </Field>
         </div>
 
+        {/* ── SECURITY CARD ── */}
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: 0 }}>SECURITY</p>
+
+          <Field label="USERNAME">
+            <input value={username} onChange={(e) => { setUsername(e.target.value); setSaved(false); }} placeholder="e.g. ironmike" style={inputStyle} onFocus={focusStyle} onBlur={blurStyle} />
+          </Field>
+
+          <Field label="PASSWORD">
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setSaved(false); }}
+                placeholder="Leave blank to keep current"
+                style={{ ...inputStyle, paddingRight: 48 }}
+                onFocus={focusStyle}
+                onBlur={blurStyle}
+              />
+              <button
+                onClick={() => setShowPassword((v) => !v)}
+                style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}
+              >
+                {showPassword ? "🙈" : "👁"}
+              </button>
+            </div>
+          </Field>
+
+          <Field label="NICKNAME">
+            <input value={nickname} onChange={(e) => { setNickname(e.target.value); setSaved(false); }} placeholder="Displayed on leaderboard" style={inputStyle} onFocus={focusStyle} onBlur={blurStyle} />
+            <p style={{ fontSize: 11, color: "#555", marginTop: 6, marginBottom: 0 }}>This is the name other users see on the leaderboard. Leave blank to use your username.</p>
+          </Field>
+        </div>
+
         {/* ── SCHEDULE CARD ── */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: 0 }}>SCHEDULE</p>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -367,10 +481,17 @@ export default function ProfilePage() {
           <Field label="PROGRAM START DATE">
             <input type="date" value={form.programStartDate} onChange={(e) => set("programStartDate", e.target.value)} style={{ ...inputStyle, colorScheme: "dark" }} onFocus={focusStyle} onBlur={blurStyle} />
           </Field>
+
+          <Field label="TIMEZONE">
+            <select value={form.timezone} onChange={(e) => set("timezone", e.target.value)} style={{ ...inputStyle, cursor: "pointer" }} onFocus={focusStyle} onBlur={blurStyle}>
+              {TIMEZONE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <p style={{ fontSize: 11, color: "#555", marginTop: 6, marginBottom: 0 }}>Used to show the correct session on your home screen.</p>
+          </Field>
         </div>
 
         {/* ── OCCUPATION CARD ── */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: 0 }}>OCCUPATION</p>
 
           <Field label="JOB TITLE">
@@ -390,18 +511,18 @@ export default function ProfilePage() {
         </div>
 
         {/* ── INJURIES CARD ── */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, marginBottom: 16 }}>
-          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 16px" }}>INJURIES / LIMITATIONS</p>
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 16px" }}>INJURIES & LIMITATIONS</p>
           <textarea value={form.injuries} onChange={(e) => set("injuries", e.target.value)} placeholder="e.g. Left shoulder impingement, lower back tightness" rows={3} style={{ ...inputStyle, resize: "none" }} onFocus={focusStyle} onBlur={blurStyle} />
         </div>
 
         {/* ── GOALS CARD ── */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 16px" }}>GOALS</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
             {form.goals.map((g, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: "#FF5F1F22", border: "1px solid #FF5F1F44", borderRadius: 8, padding: "4px 10px" }}>
-                <span style={{ fontSize: 13, color: "#F5F5F5" }}>{g}</span>
+                <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{g}</span>
                 <button onClick={() => removeGoal(i)} style={{ background: "none", border: "none", color: "#FF5F1F", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
               </div>
             ))}
@@ -415,8 +536,8 @@ export default function ProfilePage() {
         </div>
 
         {/* ── WEAK POINTS CARD ── */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, marginBottom: 24 }}>
-          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 14px" }}>PRIORITY / WEAK POINTS</p>
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 24 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 14px" }}>PRIORITY AREAS</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {WEAK_POINT_OPTIONS.map((wp) => (
               <button
@@ -424,7 +545,7 @@ export default function ProfilePage() {
                 onClick={() => toggleWeakPoint(wp)}
                 style={{
                   padding: "9px 16px", borderRadius: 10, cursor: "pointer",
-                  border: form.weakPoints.includes(wp) ? "2px solid #FF5F1F" : "1px solid #333",
+                  border: form.weakPoints.includes(wp) ? "2px solid #FF5F1F" : "1px solid var(--border)",
                   background: form.weakPoints.includes(wp) ? "#FF5F1F22" : "#1E1E1E",
                   color: form.weakPoints.includes(wp) ? "#FF5F1F" : "#666",
                   fontFamily: "'Barlow', sans-serif", fontSize: 13, fontWeight: 700,
@@ -451,12 +572,42 @@ export default function ProfilePage() {
         >
           {saved ? "✓ SAVED" : saving ? "SAVING..." : "SAVE PROFILE"}
         </button>
+
+        {/* ── CONVERSATION HISTORY CARD ── */}
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginTop: 24 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 16px" }}>CONVERSATION HISTORY</p>
+          {notes.length === 0 ? (
+            <p style={{ fontSize: 13, color: "#444", fontStyle: "italic", margin: 0 }}>No notes yet. Voice dictation transcripts will appear here.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {notes.map((note) => (
+                <div key={note.id} style={{ background: "var(--input-bg)", border: "1px solid #2a2a2a", borderRadius: 12, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: "#555", textTransform: "uppercase", marginBottom: 6 }}>
+                        {new Date(note.createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} · {new Date(note.createdAt).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#ccc", lineHeight: 1.6, wordBreak: "break-word" }}>{note.content}</div>
+                    </div>
+                    <button
+                      onClick={() => deleteNote(note.id)}
+                      disabled={deletingNoteId === note.id}
+                      style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #EF444433", background: "transparent", color: deletingNoteId === note.id ? "#555" : "#EF4444", fontSize: 14, cursor: deletingNoteId === note.id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Bottom Nav */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 99,
-        background: "#0A0A0A", borderTop: "1px solid #222",
+        background: "var(--card-bg)", borderTop: "1px solid var(--border)",
         display: "flex", justifyContent: "space-around",
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
       }}>
@@ -493,7 +644,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputStyle: React.CSSProperties = {
-  background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #333",
+  background: "var(--input-bg)", color: "var(--text-primary)", border: "1px solid var(--border)",
   borderRadius: 10, padding: "10px 14px", fontSize: 14,
   fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%",
 };
@@ -501,4 +652,4 @@ const inputStyle: React.CSSProperties = {
 const focusStyle = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
   (e.target.style.borderColor = "#FF5F1F");
 const blurStyle = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-  (e.target.style.borderColor = "#333");
+  (e.target.style.borderColor = "var(--border)");

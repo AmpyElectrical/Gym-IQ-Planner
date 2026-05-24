@@ -1,8 +1,11 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import { useTheme } from "@/lib/ThemeContext";
 
 const BUCKETS = [
   { id: "1",    label: "1 RM",    color: "#FF5F1F" },
@@ -53,6 +56,7 @@ function getBucketBest(pbs: PB[], bucketId: string): PB | null {
 export default function PBsPage() {
   const router = useRouter();
   const pathname = usePathname();
+  const { isDark } = useTheme();
   const [pageLoading, setPageLoading] = useState(true);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [grouped, setGrouped] = useState<Grouped>({});
@@ -118,7 +122,7 @@ export default function PBsPage() {
 
   if (pageLoading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: "var(--page-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         <div style={{ width: 32, height: 32, border: "3px solid #222", borderTopColor: "#FF5F1F", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       </div>
@@ -126,7 +130,7 @@ export default function PBsPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#000", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", paddingBottom: 80 }}>
+    <div style={{ minHeight: "100vh", background: "var(--page-bg)", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif", paddingBottom: 100 }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
@@ -139,14 +143,14 @@ export default function PBsPage() {
         </div>
 
         {/* Log PB card */}
-        <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+        <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16, borderLeft: isDark ? "1px solid var(--border)" : "4px solid #FF5F1F" }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 16px" }}>LOG A LIFT</p>
 
           {/* Non-PB logged indicator */}
           {pbResult && !pbResult.isPB && (
-            <div style={{ background: "#1E1E1E", border: "1px solid #333", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ background: "var(--input-bg)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 24 }}>✅</span>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: "#F5F5F5" }}>Lift logged</div>
+              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: "var(--text-primary)" }}>Lift logged</div>
             </div>
           )}
 
@@ -159,15 +163,15 @@ export default function PBsPage() {
               value={selectedExercise || search}
               onChange={(e) => { setSearch(e.target.value); setSelectedExercise(""); setShowDropdown(true); setPbResult(null); }}
               onFocus={() => setShowDropdown(true)}
-              style={{ background: "#1E1E1E", color: "#F5F5F5", border: `1px solid ${selectedExercise ? "#FF5F1F" : "#333"}`, borderRadius: 10, padding: "10px 14px", fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%" }}
+              style={{ background: "var(--input-bg)", color: "var(--text-primary)", border: `1px solid ${selectedExercise ? "#FF5F1F" : "#333"}`, borderRadius: 10, padding: "10px 14px", fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%" }}
             />
             {showDropdown && filtered.length > 0 && !selectedExercise && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#1E1E1E", border: "1px solid #333", borderRadius: 10, zIndex: 50, maxHeight: 220, overflowY: "auto", marginTop: 4 }}>
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--input-bg)", border: "1px solid var(--border)", borderRadius: 10, zIndex: 50, maxHeight: 220, overflowY: "auto", marginTop: 4 }}>
                 {filtered.map((ex) => (
                   <button
                     key={ex.id}
                     onClick={() => { setSelectedExercise(ex.name); setSearch(""); setShowDropdown(false); }}
-                    style={{ display: "block", width: "100%", padding: "10px 14px", background: "transparent", border: "none", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", fontSize: 14, cursor: "pointer", textAlign: "left", borderBottom: "1px solid #2a2a2a" }}
+                    style={{ display: "block", width: "100%", padding: "10px 14px", background: "transparent", border: "none", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif", fontSize: 14, cursor: "pointer", textAlign: "left", borderBottom: "1px solid #2a2a2a" }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "#2a2a2a")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                   >
@@ -188,9 +192,9 @@ export default function PBsPage() {
                 placeholder="e.g. 100"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
-                style={{ background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #333", borderRadius: 10, padding: "10px 14px", fontSize: 15, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%" }}
+                style={{ background: "var(--input-bg)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", fontSize: 15, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%" }}
                 onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")}
-                onBlur={(e) => (e.target.style.borderColor = "#333")}
+                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
               />
             </div>
             <div>
@@ -200,9 +204,9 @@ export default function PBsPage() {
                 placeholder="e.g. 5"
                 value={reps}
                 onChange={(e) => setReps(e.target.value)}
-                style={{ background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #333", borderRadius: 10, padding: "10px 14px", fontSize: 15, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%" }}
+                style={{ background: "var(--input-bg)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", fontSize: 15, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%" }}
                 onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")}
-                onBlur={(e) => (e.target.style.borderColor = "#333")}
+                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
               />
             </div>
           </div>
@@ -215,7 +219,7 @@ export default function PBsPage() {
                 <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: liveBucket.color }}>{liveBucket.label}</span>
               </div>
               {weight && parseFloat(weight) > 0 && (
-                <div style={{ flex: 1, background: "#1E1E1E", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ flex: 1, background: "var(--input-bg)", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 10, color: "#666", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>EST. 1RM</span>
                   <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: "#FF5F1F" }}>
                     {e1RM(parseFloat(weight), parseInt(reps))} kg
@@ -255,12 +259,12 @@ export default function PBsPage() {
                   <button
                     key={name}
                     onClick={() => setSelectedLift(name)}
-                    style={{ background: "#161616", border: "1px solid #222", borderRadius: 14, padding: 18, textAlign: "left", cursor: "pointer", width: "100%", transition: "border-color 0.2s" }}
+                    style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, textAlign: "left", cursor: "pointer", width: "100%", transition: "border-color 0.2s", borderLeft: isDark ? "1px solid var(--border)" : "4px solid #FF5F1F" }}
                     onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#444")}
                     onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#222")}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 20, color: "#F5F5F5" }}>{name}</div>
+                      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 20, color: "var(--text-primary)" }}>{name}</div>
                       {best !== null && (
                         <div style={{ textAlign: "right" }}>
                           <div style={{ fontSize: 10, color: "#666", fontWeight: 600, letterSpacing: 1 }}>BEST e1RM</div>
@@ -275,7 +279,7 @@ export default function PBsPage() {
                         return (
                           <div key={b.id} style={{ background: `${b.color}18`, border: `1px solid ${b.color}44`, borderRadius: 8, padding: "5px 10px" }}>
                             <div style={{ fontSize: 10, color: b.color, fontWeight: 700, letterSpacing: 0.5 }}>{b.label}</div>
-                            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 16, color: "#F5F5F5" }}>
+                            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 16, color: "var(--text-primary)" }}>
                               {bBest.weight}kg × {bBest.reps}
                             </div>
                           </div>
@@ -292,20 +296,20 @@ export default function PBsPage() {
 
       {/* Lift detail overlay */}
       {selectedLift && grouped[selectedLift] && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "#000", overflowY: "auto" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "var(--page-bg)", overflowY: "auto" }}>
           <div style={{ maxWidth: 480, margin: "0 auto", padding: "28px 20px 96px" }}>
 
             {/* Header */}
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
               <div>
                 <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 4px" }}>PERSONAL BESTS</p>
-                <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, lineHeight: 1, margin: 0, color: "#F5F5F5" }}>
+                <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, lineHeight: 1, margin: 0, color: "var(--text-primary)" }}>
                   {selectedLift.toUpperCase()}
                 </h2>
               </div>
               <button
                 onClick={() => setSelectedLift(null)}
-                style={{ background: "#161616", border: "1px solid #222", borderRadius: 50, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 18, cursor: "pointer", flexShrink: 0 }}
+                style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 50, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 18, cursor: "pointer", flexShrink: 0 }}
               >
                 ✕
               </button>
@@ -315,7 +319,7 @@ export default function PBsPage() {
             {(() => {
               const best = getBestE1RM(grouped[selectedLift]);
               return best !== null ? (
-                <div style={{ background: "#161616", border: "1px solid #FF5F1F33", borderRadius: 16, padding: 20, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ background: "var(--card-bg)", border: "1px solid #FF5F1F33", borderRadius: 16, padding: 20, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>BEST EST. 1RM</div>
                     <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 48, lineHeight: 1, color: "#FF5F1F" }}>
@@ -328,7 +332,7 @@ export default function PBsPage() {
             })()}
 
             {/* Best per bucket */}
-            <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+            <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 16px" }}>BEST PER BUCKET</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {BUCKETS.map((b) => {
@@ -338,7 +342,7 @@ export default function PBsPage() {
                       <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 16, color: bBest ? b.color : "#444" }}>{b.label}</span>
                       {bBest ? (
                         <div style={{ textAlign: "right" }}>
-                          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: "#F5F5F5" }}>{bBest.weight}kg × {bBest.reps}</div>
+                          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: "var(--text-primary)" }}>{bBest.weight}kg × {bBest.reps}</div>
                           <div style={{ fontSize: 11, color: "#666" }}>e1RM {e1RM(bBest.weight, bBest.reps)} kg</div>
                         </div>
                       ) : (
@@ -351,7 +355,7 @@ export default function PBsPage() {
             </div>
 
             {/* History */}
-            <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20 }}>
+            <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 }}>
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 16px" }}>
                 HISTORY ({grouped[selectedLift].length})
               </p>
@@ -359,9 +363,9 @@ export default function PBsPage() {
                 {[...grouped[selectedLift]].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((pb) => {
                   const bkt = BUCKETS.find((b) => b.id === pb.bucketId);
                   return (
-                    <div key={pb.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#1E1E1E", borderRadius: 10 }}>
+                    <div key={pb.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "var(--input-bg)", borderRadius: 10 }}>
                       <div>
-                        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: "#F5F5F5" }}>{pb.weight}kg × {pb.reps}</div>
+                        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 18, color: "var(--text-primary)" }}>{pb.weight}kg × {pb.reps}</div>
                         <div style={{ fontSize: 11, color: "#666" }}>{new Date(pb.date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</div>
                       </div>
                       <div style={{ textAlign: "right" }}>
@@ -382,24 +386,24 @@ export default function PBsPage() {
         <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.97)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center" }}>
           <div style={{ fontSize: 88, marginBottom: 4, lineHeight: 1 }}>🏆</div>
           <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#FF5F1F", textTransform: "uppercase", margin: "0 0 8px" }}>NEW PERSONAL BEST</p>
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 36, color: "#F5F5F5", lineHeight: 1.1, marginBottom: 24 }}>
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 36, color: "var(--text-primary)", lineHeight: 1.1, marginBottom: 24 }}>
             {pbResult.exerciseName.toUpperCase()}
           </div>
 
-          <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 24, width: "100%", maxWidth: 320, marginBottom: 28 }}>
+          <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 320, marginBottom: 28 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 10, color: "#666", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>WEIGHT</div>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: "#F5F5F5" }}>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: "var(--text-primary)" }}>
                   {pbResult.weight} <span style={{ fontSize: 16, color: "#666" }}>kg</span>
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: 10, color: "#666", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>REPS</div>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: "#F5F5F5" }}>{pbResult.reps}</div>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: "var(--text-primary)" }}>{pbResult.reps}</div>
               </div>
             </div>
-            <div style={{ borderTop: "1px solid #222", paddingTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 10, color: "#666", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>EST. 1RM</div>
                 <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, color: "#FF5F1F" }}>
@@ -431,7 +435,7 @@ export default function PBsPage() {
       {/* Bottom Nav */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 99,
-        background: "#0A0A0A", borderTop: "1px solid #222",
+        background: "var(--card-bg)", borderTop: "1px solid var(--border)",
         display: "flex", justifyContent: "space-around",
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
       }}>

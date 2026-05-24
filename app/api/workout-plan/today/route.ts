@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentWeek } from "@/lib/weekUtils";
 
+export const dynamic = "force-dynamic";
+
 const DAY_MAP = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export async function GET(req: NextRequest) {
@@ -11,7 +13,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ plan: null }, { status: 401 });
   }
 
-  const today = DAY_MAP[new Date().getDay()];
+  const dayParam = req.nextUrl.searchParams.get("day");
+  const today = dayParam ?? DAY_MAP[new Date().getDay()];
   const user = await prisma.user.findUnique({ where: { id: userId } });
   const week = getCurrentWeek(user!.createdAt);
 

@@ -21,6 +21,7 @@ model User {
   personalBests PersonalBest[]
   workoutPlans  WorkoutPlan[]
   trainingPlans TrainingPlan[]
+  profileNotes  ProfileNote[]
 }
 
 model Profile {
@@ -38,6 +39,7 @@ model Profile {
   sleepTime       String
   gymTime          String
   programStartDate DateTime?
+  timezone         String   @default("Australia/Melbourne")
   injuries         String
   goals           Json
   weakPoints      Json
@@ -102,4 +104,12 @@ model WorkoutPlan {
   exercises      Json
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+}
+
+model ProfileNote {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
 }

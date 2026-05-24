@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --page-bg: #000000;
+  --card-bg: #161616;
+  --input-bg: #1E1E1E;
+  --text-primary: #F5F5F5;
+  --text-muted: #666666;
+  --border: #222222;
+  --accent: #FF5F1F;
+}
+
+[data-theme="light"] {
+  --page-bg: #F0F2F5;
+  --card-bg: #FFFFFF;
+  --input-bg: #F5F7FA;
+  --text-primary: #111111;
+  --text-muted: #666666;
+  --border: #E0E0E0;
+  --accent: #FF5F1F;
+}

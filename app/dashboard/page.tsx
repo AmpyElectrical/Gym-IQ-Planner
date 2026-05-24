@@ -1,9 +1,12 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { getCurrentWeek } from "@/lib/weekUtils";
+import { useTheme } from "@/lib/ThemeContext";
 
 type User = {
   id: string;
@@ -54,11 +57,13 @@ const SESSION_META: Record<string, { label: string; icon: string; color: string 
 export default function Dashboard() {
   const router = useRouter();
   const pathname = usePathname();
+  const { isDark } = useTheme();
   const [user, setUser] = useState<User | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("home");
   const [todayPlan, setTodayPlan] = useState<WorkoutPlan | null>(null);
   const [currentWeek, setCurrentWeek] = useState<"1" | "2">("1");
+  const [userTimezone, setUserTimezone] = useState("Australia/Melbourne");
 
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
@@ -77,6 +82,7 @@ export default function Dashboard() {
         setUser(data.user);
         const startDate = data.user.profile?.programStartDate ?? data.user.createdAt;
         setCurrentWeek(getCurrentWeek(startDate));
+        setUserTimezone(data.user.profile?.timezone || "Australia/Melbourne");
         setPageLoading(false);
       })
       .catch(() => router.replace("/"));
@@ -84,7 +90,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user) return;
-    fetch("/api/workout-plan/today")
+    const DAY_ABBR: Record<string, string> = { Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed", Thursday: "Thu", Friday: "Fri", Saturday: "Sat", Sunday: "Sun" };
+    const todayAbbr = DAY_ABBR[new Date().toLocaleDateString("en-AU", { weekday: "long", timeZone: userTimezone })] ?? "Mon";
+    fetch(`/api/workout-plan/today?day=${todayAbbr}`)
       .then((res) => res.json())
       .then((data) => setTodayPlan(data.plan ?? null))
       .catch(() => {});
@@ -123,7 +131,7 @@ export default function Dashboard() {
 
   if (pageLoading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: "var(--page-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         <div style={{ width: 32, height: 32, border: "3px solid #222", borderTopColor: "#FF5F1F", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       </div>
@@ -131,7 +139,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#000", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", paddingBottom: 80 }}>
+    <div style={{ minHeight: "100vh", background: "var(--page-bg)", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif", paddingBottom: 100 }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
@@ -145,7 +153,7 @@ export default function Dashboard() {
               <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>
                 {greeting}
               </p>
-              <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 42, lineHeight: 1, color: "#F5F5F5", margin: 0 }}>
+              <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 42, lineHeight: 1, color: "var(--text-primary)", margin: 0 }}>
                 {displayName}
               </h1>
               <p style={{ fontSize: 11, color: "#444", marginTop: 6, letterSpacing: 0.5 }}>
@@ -154,7 +162,7 @@ export default function Dashboard() {
             </div>
 
             {/* Today's Session */}
-            <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+            <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16, borderLeft: isDark ? "1px solid var(--border)" : "4px solid #FF5F1F" }}>
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", marginBottom: 14, margin: "0 0 14px" }}>
                 TODAY'S SESSION
               </p>
@@ -199,7 +207,7 @@ export default function Dashboard() {
             </div>
 
             {/* Daily Check-in */}
-            <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 16, padding: 20 }}>
+            <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, borderLeft: isDark ? "1px solid var(--border)" : "4px solid #FF5F1F" }}>
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 18px" }}>
                 DAILY CHECK-IN
               </p>
@@ -229,9 +237,9 @@ export default function Dashboard() {
                       placeholder="e.g. 82.5"
                       value={weight}
                       onChange={(e) => setWeight(e.target.value)}
-                      style={{ background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #333", borderRadius: 10, padding: "10px 14px", fontSize: 15, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%" }}
+                      style={{ background: "var(--input-bg)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", fontSize: 15, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%" }}
                       onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")}
-                      onBlur={(e) => (e.target.style.borderColor = "#333")}
+                      onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
                     />
                   </div>
 
@@ -245,9 +253,9 @@ export default function Dashboard() {
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       rows={3}
-                      style={{ background: "#1E1E1E", color: "#F5F5F5", border: "1px solid #333", borderRadius: 10, padding: "10px 14px", fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%", resize: "none" }}
+                      style={{ background: "var(--input-bg)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: "none", width: "100%", resize: "none" }}
                       onFocus={(e) => (e.target.style.borderColor = "#FF5F1F")}
-                      onBlur={(e) => (e.target.style.borderColor = "#333")}
+                      onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
                     />
                   </div>
 
@@ -271,7 +279,7 @@ export default function Dashboard() {
 
               {/* Recent check-ins */}
               {recentCheckIns.length > 0 && (
-                <div style={{ marginTop: 20, borderTop: "1px solid #222", paddingTop: 16 }}>
+                <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
                   <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 12px" }}>
                     RECENT
                   </p>
@@ -284,7 +292,7 @@ export default function Dashboard() {
                             <span style={{ fontSize: 13, color: isToday ? "#FF5F1F" : "#999", fontWeight: isToday ? 700 : 400 }}>
                               {isToday ? "✓ TODAY" : new Date(c.date).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
                             </span>
-                            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 16, color: "#F5F5F5" }}>
+                            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 16, color: "var(--text-primary)" }}>
                               {c.weight} kg
                             </span>
                           </div>
@@ -315,7 +323,7 @@ export default function Dashboard() {
       {/* Bottom Nav */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 99,
-        background: "#0A0A0A", borderTop: "1px solid #222",
+        background: "var(--card-bg)", borderTop: "1px solid var(--border)",
         display: "flex", justifyContent: "space-around",
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
       }}>

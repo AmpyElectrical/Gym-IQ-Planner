@@ -1,9 +1,12 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import React from "react";
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import { useTheme } from "@/lib/ThemeContext";
 
 const TABS = [
   { id: "home",    icon: "⚡",  label: "Home",    route: "/dashboard" },
@@ -63,7 +66,7 @@ export default function RanksPage() {
 
   if (pageLoading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: "var(--page-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         <div style={{ width: 32, height: 32, border: "3px solid #222", borderTopColor: "#FF5F1F", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       </div>
@@ -71,7 +74,7 @@ export default function RanksPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#000", color: "#F5F5F5", fontFamily: "'Barlow', sans-serif", paddingBottom: 80 }}>
+    <div style={{ minHeight: "100vh", background: "var(--page-bg)", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif", paddingBottom: 100 }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
@@ -217,7 +220,7 @@ export default function RanksPage() {
       {/* Bottom Nav */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 99,
-        background: "#0A0A0A", borderTop: "1px solid #222",
+        background: "var(--card-bg)", borderTop: "1px solid var(--border)",
         display: "flex", justifyContent: "space-around",
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
       }}>
@@ -247,19 +250,21 @@ export default function RanksPage() {
 function RankRow({ rank, username, realUsername, isMe, sub, right }: {
   rank: number; username: string; realUsername?: string; isMe: boolean; sub?: string; right: React.ReactNode;
 }) {
+  const { isDark } = useTheme();
   const showReal = realUsername && realUsername !== username;
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 12,
-      background: isMe ? "#FF5F1F18" : "#161616",
-      border: `1px solid ${isMe ? "#FF5F1F55" : "#222"}`,
+      background: isMe ? "#FF5F1F18" : "var(--card-bg)",
+      border: isMe ? "1px solid #FF5F1F55" : "1px solid var(--border)",
+      borderLeft: isMe ? "1px solid #FF5F1F55" : !isDark ? "4px solid #FF5F1F" : "1px solid var(--border)",
       borderRadius: 12, padding: "12px 14px",
     }}>
       <div style={{ width: 32, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: rank <= 3 ? 22 : 16, color: "#666", flexShrink: 0, textAlign: "center" }}>
         {medal(rank)}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, color: isMe ? "#FF5F1F" : "#F5F5F5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: isMe ? "#FF5F1F" : "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {username}{isMe && " (you)"}
         </div>
         {showReal && <div style={{ fontSize: 11, color: "#444", marginTop: 1 }}>@{realUsername}</div>}
