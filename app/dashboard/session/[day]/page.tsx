@@ -283,7 +283,7 @@ function SessionContent({ day }: { day: string }) {
         {/* Back + breadcrumb */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
           <button
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.back()}
             style={{ background: "#161616", border: "1px solid #222", borderRadius: 10, padding: "8px 14px", color: "#999", fontSize: 13, cursor: "pointer", fontFamily: "'Barlow', sans-serif", fontWeight: 600, flexShrink: 0 }}
           >
             ← Back

@@ -64,6 +64,7 @@ export default function Dashboard() {
   const [todayPlan, setTodayPlan] = useState<WorkoutPlan | null>(null);
   const [currentWeek, setCurrentWeek] = useState<"1" | "2">("1");
   const [userTimezone, setUserTimezone] = useState("Australia/Melbourne");
+  const [todayAbbr, setTodayAbbr] = useState<string>("");
 
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
@@ -88,19 +89,33 @@ export default function Dashboard() {
       .catch(() => router.replace("/"));
   }, [router]);
 
+  const DAY_ABBR: Record<string, string> = { Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed", Thursday: "Thu", Friday: "Fri", Saturday: "Sat", Sunday: "Sun" };
+
   useEffect(() => {
     if (!user) return;
-    const DAY_ABBR: Record<string, string> = { Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed", Thursday: "Thu", Friday: "Fri", Saturday: "Sat", Sunday: "Sun" };
-    const todayAbbr = DAY_ABBR[new Date().toLocaleDateString("en-AU", { weekday: "long", timeZone: userTimezone })] ?? "Mon";
-    fetch(`/api/workout-plan/today?day=${todayAbbr}`)
-      .then((res) => res.json())
-      .then((data) => setTodayPlan(data.plan ?? null))
-      .catch(() => {});
+    const day = DAY_ABBR[new Date().toLocaleDateString("en-AU", { weekday: "long", timeZone: userTimezone })] ?? "Mon";
+    setTodayAbbr(day);
     fetch("/api/checkins")
       .then((res) => res.json())
       .then((data) => setRecentCheckIns(data.checkIns ?? []))
       .catch(() => {});
-  }, [user]);
+  }, [user, userTimezone]);
+
+  useEffect(() => {
+    if (!user || !todayAbbr) return;
+    fetch(`/api/workout-plan/today?day=${todayAbbr}`)
+      .then((res) => res.json())
+      .then((data) => setTodayPlan(data.plan ?? null))
+      .catch(() => {});
+  }, [user, todayAbbr]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const day = DAY_ABBR[new Date().toLocaleDateString("en-AU", { weekday: "long", timeZone: userTimezone })] ?? "Mon";
+      setTodayAbbr((prev) => (prev !== day ? day : prev));
+    }, 1800000);
+    return () => clearInterval(id);
+  }, [userTimezone]);
 
   async function handleCheckIn() {
     if (!weight) return;

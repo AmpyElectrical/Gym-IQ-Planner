@@ -559,7 +559,7 @@ export default function PlanPage() {
   const builderSt    = builderEntry ? getType(builderEntry.typeId) : null;
 
   return (
-    <div style={{ height: "100vh", background: "var(--page-bg)", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: "calc(100vh - 52px)", background: "var(--page-bg)", color: "var(--text-primary)", fontFamily: "'Barlow', sans-serif", display: "flex", flexDirection: "column" }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes typingDot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}`}</style>
 
@@ -931,14 +931,14 @@ export default function PlanPage() {
       {/* ── SESSION DETAIL OVERLAY ── */}
       {detailDay && detailSt && (
         <div style={{ position: "fixed", inset: 0, zIndex: 160, background: "var(--page-bg)", overflowY: "auto" }}>
-          <div style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px 96px" }}>
+          <div style={{ maxWidth: 480, margin: "0 auto", padding: "64px 20px 96px" }}>
 
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
               <div>
                 <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 4px" }}>WEEK {week} · {detailDay}</p>
                 <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, lineHeight: 1, margin: 0, color: "var(--text-primary)" }}>{detailSt.label.toUpperCase()}</h2>
               </div>
-              <button onClick={() => setDetailDay(null)} style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 50, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 18, cursor: "pointer", flexShrink: 0 }}>✕</button>
+              <button onClick={() => setDetailDay(null)} style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", color: "#999", fontSize: 13, cursor: "pointer", fontFamily: "'Barlow', sans-serif", fontWeight: 600, flexShrink: 0 }}>← Back</button>
             </div>
 
             <div style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 24, display: "flex", alignItems: "center", gap: 16 }}>
@@ -995,7 +995,7 @@ export default function PlanPage() {
       {/* ── BUILDER OVERLAY ── */}
       {customizeDay && builderEntry && builderSt && (
         <div style={{ position: "fixed", inset: 0, zIndex: 170, background: "var(--page-bg)", overflowY: "auto" }}>
-          <div style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px 100px" }}>
+          <div style={{ maxWidth: 480, margin: "0 auto", padding: "64px 20px 100px" }}>
 
             {/* Header */}
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
@@ -1003,7 +1003,7 @@ export default function PlanPage() {
                 <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#666", textTransform: "uppercase", margin: "0 0 4px" }}>WEEK {week} · {customizeDay}</p>
                 <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 32, lineHeight: 1, margin: 0, color: "var(--text-primary)" }}>CUSTOMISE SESSION</h2>
               </div>
-              <button onClick={() => setCustomizeDay(null)} style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 50, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 18, cursor: "pointer", flexShrink: 0 }}>✕</button>
+              <button onClick={() => setCustomizeDay(null)} style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", color: "#999", fontSize: 13, cursor: "pointer", fontFamily: "'Barlow', sans-serif", fontWeight: 600, flexShrink: 0 }}>← Back</button>
             </div>
 
             {/* Session type pill */}
@@ -1079,12 +1079,12 @@ export default function PlanPage() {
       {/* ── EXERCISE PICKER OVERLAY ── */}
       {showExPicker && (
         <div style={{ position: "fixed", inset: 0, zIndex: 180, background: "var(--page-bg)", overflowY: "auto" }}>
-          <div style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px 100px" }}>
+          <div style={{ maxWidth: 480, margin: "0 auto", padding: "64px 20px 100px" }}>
 
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 28, lineHeight: 1, margin: 0, color: "var(--text-primary)" }}>ADD EXERCISE</h2>
-              <button onClick={() => setShowExPicker(false)} style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 50, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 18, cursor: "pointer" }}>✕</button>
+              <button onClick={() => setShowExPicker(false)} style={{ background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", color: "#999", fontSize: 13, cursor: "pointer", fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>← Back</button>
             </div>
 
             {/* ── CUSTOM EXERCISE FORM ── */}
